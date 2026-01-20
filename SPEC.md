@@ -1146,6 +1146,29 @@ herdctl/
 
 The `docs/` directory is a full Astro site using Starlight (Astro's docs theme). Documentation is written in markdown in `docs/src/content/docs/` and rendered by Astro. No content duplication - markdown is the source of truth.
 
+### Release & npm Publishing
+
+**Versioning**: Managed via [changesets](https://github.com/changesets/changesets) for semantic versioning across the monorepo.
+
+**Publishing Strategy**: Uses **OIDC trusted publishing** (as of December 2025, npm classic tokens are revoked):
+- No long-lived npm tokens stored in CI
+- Short-lived, workflow-specific credentials via GitHub Actions OIDC
+- Automatic provenance attestations for supply chain security
+- Requires npm >= 11.5.1 or Node.js >= 24
+
+**Workflow**:
+1. Contributors run `pnpm changeset` to describe changes
+2. On merge to main, GitHub Action creates "Version Packages" PR
+3. When Version Packages PR is merged, packages are published to npm via OIDC
+
+**Package Access**:
+| Package | npm Name | Access |
+|---------|----------|--------|
+| CLI | `herdctl` | public |
+| Core | `@herdctl/core` | public |
+| Web | `@herdctl/web` | public |
+| Discord | `@herdctl/discord` | public |
+
 ---
 
 ## CLI Commands

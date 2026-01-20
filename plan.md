@@ -26,6 +26,78 @@ We use both scoped and unscoped packages:
 
 ---
 
+## Release & Publishing Strategy
+
+We use **changesets** for version management and **OIDC trusted publishing** for secure npm releases.
+
+### Changesets Workflow
+
+1. **During development**: Create changeset files describing changes
+   ```bash
+   pnpm changeset
+   ```
+
+2. **On merge to main**: GitHub Action either:
+   - Creates a "Version Packages" PR (if changesets exist)
+   - Publishes to npm (if Version Packages PR was merged)
+
+3. **Version bumping**: Handled automatically by `changeset version`
+
+### npm OIDC Trusted Publishing
+
+As of December 2025, npm classic tokens are revoked. We use **OIDC trusted publishing** which:
+- Eliminates the need for long-lived npm tokens
+- Uses short-lived, workflow-specific credentials
+- Automatically generates provenance attestations
+- Is more secure than token-based publishing
+
+**Requirements**:
+- npm >= 11.5.1 or Node.js >= 24
+- GitHub-hosted runners (not self-hosted)
+- Packages must exist on npm before configuring OIDC
+
+**Initial Release Strategy** (for new packages):
+1. First release uses a granular access token (one-time)
+2. After packages exist, configure OIDC trusted publishing on npmjs.com
+3. All subsequent releases use OIDC - no tokens needed
+
+**GitHub Actions Workflow**:
+```yaml
+permissions:
+  contents: read
+  id-token: write  # Required for OIDC
+
+steps:
+  - uses: actions/setup-node@v4
+    with:
+      node-version: '24'
+      registry-url: 'https://registry.npmjs.org'
+  - run: npm publish --provenance --access public
+```
+
+**OIDC Configuration on npmjs.com** (per package):
+- Organization/user: `edspencer`
+- Repository: `herdctl`
+- Workflow filename: `release.yml`
+
+### Dependencies
+
+Root `package.json`:
+```json
+{
+  "devDependencies": {
+    "@changesets/cli": "^2"
+  },
+  "scripts": {
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "turbo run release"
+  }
+}
+```
+
+---
+
 ## Phase 0: Bootstrap (Manual)
 
 Claude will create the GitHub repo and scaffold directly (not via ralph-tui).

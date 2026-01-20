@@ -4,15 +4,35 @@
  * herdctl - Autonomous Agent Fleet Management for Claude Code
  *
  * Commands (PRD 6):
+ * - herdctl init              Initialize a new herdctl project
  * - herdctl start [agent]     Start all agents or a specific agent
  * - herdctl stop [agent]      Stop all agents or a specific agent
  * - herdctl status [agent]    Show fleet or agent status
  * - herdctl logs [agent]      Tail agent logs
  * - herdctl trigger <agent>   Manually trigger an agent
+ *
+ * Commands (PRD 7):
+ * - herdctl config validate   Validate configuration
+ * - herdctl config show       Show resolved configuration
+ *
+ * Commands (PRD 8 - Job Management):
+ * - herdctl jobs              List recent jobs
+ * - herdctl job <id>          Show job details
+ * - herdctl cancel <id>       Cancel running job
  */
 
 import { Command } from "commander";
 import { VERSION } from "@herdctl/core";
+import { initCommand } from "./commands/init.js";
+import { startCommand } from "./commands/start.js";
+import { stopCommand } from "./commands/stop.js";
+import { configValidateCommand, configShowCommand } from "./commands/config.js";
+import { statusCommand } from "./commands/status.js";
+import { logsCommand } from "./commands/logs.js";
+import { triggerCommand } from "./commands/trigger.js";
+import { jobsCommand } from "./commands/jobs.js";
+import { jobCommand } from "./commands/job.js";
+import { cancelCommand } from "./commands/cancel.js";
 
 const program = new Command();
 
@@ -22,45 +42,247 @@ program
   .version(VERSION);
 
 program
-  .command("start [agent]")
-  .description("Start all agents or a specific agent")
-  .action((agent) => {
-    console.log(agent ? `Starting agent: ${agent}` : "Starting all agents...");
-    console.log("Not yet implemented - see PRD 6");
+  .command("init")
+  .description("Initialize a new herdctl project")
+  .option("-n, --name <name>", "Fleet name")
+  .option("-e, --example <template>", "Use example template (simple, quickstart, github)")
+  .option("-y, --yes", "Accept all defaults without prompting")
+  .option("-f, --force", "Overwrite existing configuration")
+  .action(async (options) => {
+    try {
+      await initCommand(options);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
   });
 
 program
-  .command("stop [agent]")
-  .description("Stop all agents or a specific agent")
-  .action((agent) => {
-    console.log(agent ? `Stopping agent: ${agent}` : "Stopping all agents...");
-    console.log("Not yet implemented - see PRD 6");
+  .command("start")
+  .description("Start the fleet")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .option("-s, --state <path>", "Path to state directory (default: .herdctl)")
+  .action(async (options) => {
+    try {
+      await startCommand(options);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
+  });
+
+program
+  .command("stop")
+  .description("Stop the fleet")
+  .option("-f, --force", "Immediate stop (cancel jobs)")
+  .option("-t, --timeout <seconds>", "Wait max seconds before force kill", "30")
+  .option("-s, --state <path>", "Path to state directory (default: .herdctl)")
+  .action(async (options) => {
+    try {
+      await stopCommand({
+        force: options.force,
+        timeout: parseInt(options.timeout, 10),
+        state: options.state,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("process.exit")) {
+        // Let the process.exit call in stopCommand handle this
+        return;
+      }
+      console.error("Error:", error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
   });
 
 program
   .command("status [agent]")
   .description("Show fleet status or agent details")
-  .action((agent) => {
-    console.log(agent ? `Status for agent: ${agent}` : "Fleet status:");
-    console.log("Not yet implemented - see PRD 6");
+  .option("--json", "Output as JSON for scripting")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .option("-s, --state <path>", "Path to state directory (default: .herdctl)")
+  .action(async (agent, options) => {
+    try {
+      await statusCommand(agent, options);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
   });
 
 program
   .command("logs [agent]")
-  .description("Tail agent logs")
-  .option("-f, --follow", "Follow log output")
-  .action((agent, options) => {
-    console.log(agent ? `Logs for agent: ${agent}` : "All agent logs:");
-    if (options.follow) console.log("(following)");
-    console.log("Not yet implemented - see PRD 6");
+  .description("Show agent logs")
+  .option("-f, --follow", "Follow log output continuously")
+  .option("--job <id>", "Logs from specific job")
+  .option("-n, --lines <count>", "Number of lines to show (default: 50)")
+  .option("--json", "Output as newline-delimited JSON")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .option("-s, --state <path>", "Path to state directory (default: .herdctl)")
+  .action(async (agent, options) => {
+    try {
+      await logsCommand(agent, options);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
   });
 
 program
   .command("trigger <agent>")
   .description("Manually trigger an agent")
-  .action((agent) => {
-    console.log(`Triggering agent: ${agent}`);
-    console.log("Not yet implemented - see PRD 6");
+  .option("-S, --schedule <name>", "Trigger specific schedule")
+  .option("-p, --prompt <prompt>", "Custom prompt")
+  .option("-w, --wait", "Wait for job to complete")
+  .option("--json", "Output as JSON for scripting")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .option("-s, --state <path>", "Path to state directory (default: .herdctl)")
+  .action(async (agent, options) => {
+    try {
+      await triggerCommand(agent, {
+        schedule: options.schedule,
+        prompt: options.prompt,
+        wait: options.wait,
+        json: options.json,
+        config: options.config,
+        state: options.state,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
+  });
+
+// Job management commands (PRD 8)
+program
+  .command("jobs")
+  .description("List recent jobs")
+  .option("-a, --agent <name>", "Filter by agent name")
+  .option("-S, --status <status>", "Filter by status (pending, running, completed, failed, cancelled)")
+  .option("-l, --limit <count>", "Number of jobs to show (default: 20)")
+  .option("--json", "Output as JSON for scripting")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .option("-s, --state <path>", "Path to state directory (default: .herdctl)")
+  .action(async (options) => {
+    try {
+      await jobsCommand({
+        agent: options.agent,
+        status: options.status,
+        limit: options.limit ? parseInt(options.limit, 10) : undefined,
+        json: options.json,
+        config: options.config,
+        state: options.state,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
+  });
+
+program
+  .command("job <id>")
+  .description("Show job details")
+  .option("-L, --logs", "Show job output")
+  .option("--json", "Output as JSON for scripting")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .option("-s, --state <path>", "Path to state directory (default: .herdctl)")
+  .action(async (id, options) => {
+    try {
+      await jobCommand(id, {
+        logs: options.logs,
+        json: options.json,
+        config: options.config,
+        state: options.state,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
+  });
+
+program
+  .command("cancel <id>")
+  .description("Cancel a running job")
+  .option("-f, --force", "Force cancel (SIGKILL)")
+  .option("-y, --yes", "Skip confirmation prompt")
+  .option("--json", "Output as JSON for scripting")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .option("-s, --state <path>", "Path to state directory (default: .herdctl)")
+  .action(async (id, options) => {
+    try {
+      await cancelCommand(id, {
+        force: options.force,
+        yes: options.yes,
+        json: options.json,
+        config: options.config,
+        state: options.state,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
+  });
+
+// Config command group
+const configCmd = program
+  .command("config")
+  .description("Configuration management commands");
+
+configCmd
+  .command("validate")
+  .description("Validate the current configuration")
+  .option("--fix", "Show suggestions for fixes")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .action(async (options) => {
+    try {
+      await configValidateCommand(options);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
+  });
+
+configCmd
+  .command("show")
+  .description("Show merged/resolved configuration")
+  .option("--json", "Output as JSON")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .action(async (options) => {
+    try {
+      await configShowCommand(options);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
   });
 
 program.parse();

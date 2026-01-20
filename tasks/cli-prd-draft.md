@@ -262,6 +262,146 @@ herdctl job <id> --logs         # Show job output
 herdctl cancel <id>             # Cancel running job
 ```
 
+#### US-9: Changesets & npm Publishing Setup
+**As a** maintainer of herdctl
+**I want** automated versioning and npm publishing via changesets
+**So that** releases are automated and consistent on merge to main
+
+**Implementation**:
+
+1. **Initialize changesets** in the monorepo root:
+```bash
+pnpm add -D @changesets/cli
+pnpm changeset init
+```
+
+2. **Configure `.changeset/config.json`**:
+```json
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.4/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}
+```
+
+3. **Update `packages/cli/package.json`** for publishing:
+```json
+{
+  "name": "herdctl",
+  "files": ["dist", "bin", "README.md"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "release": "pnpm build && changeset publish"
+  }
+}
+```
+
+4. **Update `packages/core/package.json`** for publishing:
+```json
+{
+  "name": "@herdctl/core",
+  "private": false,  // REMOVE or set to false - currently blocks publishing!
+  "files": ["dist", "README.md"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "release": "pnpm build && changeset publish"
+  }
+}
+```
+
+5. **Create `.github/workflows/release.yml`** (using OIDC trusted publishing):
+```yaml
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # For creating releases
+      pull-requests: write # For creating version PRs
+      id-token: write      # For OIDC npm publishing
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"  # Required for OIDC (npm >= 11.5.1)
+          cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      - name: Build
+        run: pnpm build
+
+      - name: Run Tests
+        run: pnpm test
+
+      - name: Create Release Pull Request or Publish to npm
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: pnpm run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No NPM_TOKEN needed! OIDC handles authentication
+```
+
+6. **Add root-level release script** to `package.json`:
+```json
+{
+  "scripts": {
+    "release": "turbo run release",
+    "changeset": "changeset",
+    "version": "changeset version"
+  }
+}
+```
+
+7. **Update package release scripts** to use `--provenance`:
+```json
+{
+  "scripts": {
+    "release": "pnpm build && npm publish --provenance --access public"
+  }
+}
+```
+
+**Note on OIDC**: As of December 2025, npm uses OIDC trusted publishing instead of long-lived tokens. This requires:
+- Node.js 24+ (or npm >= 11.5.1)
+- `id-token: write` permission in GitHub Actions
+- Configuring trusted publishers on npmjs.com after initial publish (see Prerequisites)
+
 ### CLI Structure
 
 ```
@@ -292,6 +432,7 @@ packages/cli/
 
 ### Dependencies to Add
 
+**CLI package (`packages/cli/package.json`)**:
 ```json
 {
   "dependencies": {
@@ -299,6 +440,15 @@ packages/cli/
     "commander": "^12",
     "chalk": "^5",
     "cli-table3": "^0.6"
+  }
+}
+```
+
+**Root workspace (`package.json`)**:
+```json
+{
+  "devDependencies": {
+    "@changesets/cli": "^2"
   }
 }
 ```
@@ -313,6 +463,9 @@ packages/cli/
 - `herdctl <command> --help` shows command options
 - CLI contains NO business logic (verified by code review)
 - All operations delegate to FleetManager
+- **npm publishing**: Both `herdctl` and `@herdctl/core` are published to npm
+- **Changesets workflow**: GitHub Action creates release PRs automatically
+- **Versioning**: `pnpm changeset` creates changeset files correctly
 
 ### Documentation Updates
 
@@ -330,6 +483,53 @@ After CLI is complete, update docs:
 - Support `--json` flag on relevant commands for scripting
 - Exit codes: 0 = success, 1 = error
 - Respect NO_COLOR environment variable
+
+### Prerequisites (Manual Steps Before PRD Execution)
+
+The following must be set up manually before running this PRD:
+
+#### npm Organization Setup
+
+1. **Verify npm organization exists**:
+   - Ensure `@herdctl` org exists on npm: https://www.npmjs.com/org/herdctl
+   - Your npm account must have publish access to the org
+
+#### Initial Publish (One-Time Token)
+
+Since OIDC trusted publishing requires packages to exist first, the **initial release** needs a temporary token:
+
+1. **Create a short-lived granular access token**:
+   - Go to https://www.npmjs.com/settings/YOUR_USERNAME/tokens
+   - Click "Generate New Token" → "Granular Access Token"
+   - Name: `herdctl-initial-publish`
+   - Expiration: 7 days (short-lived, one-time use)
+   - Packages: "All packages"
+   - Organizations: `@herdctl`
+   - Click "Generate Token" and **copy immediately**
+
+2. **Add temporary secret to GitHub** (will be removed after first publish):
+   - Go to https://github.com/edspencer/herdctl/settings/secrets/actions
+   - Add `NPM_TOKEN` with the token value
+   - **Remove this secret after packages are published**
+
+#### OIDC Trusted Publishing Setup (After Initial Publish)
+
+Once packages exist on npm, configure OIDC for token-free publishing:
+
+1. **For each package** (`herdctl` and `@herdctl/core`):
+   - Go to package settings on npmjs.com
+   - Find "Trusted Publisher" section
+   - Select "GitHub Actions"
+   - Fill in:
+     - Organization/user: `edspencer`
+     - Repository: `herdctl`
+     - Workflow filename: `release.yml`
+   - Click "Set up connection"
+
+2. **Remove NPM_TOKEN from GitHub**:
+   - Go to https://github.com/edspencer/herdctl/settings/secrets/actions
+   - Delete the `NPM_TOKEN` secret
+   - OIDC will handle all future authentication
 
 ### Out of Scope
 

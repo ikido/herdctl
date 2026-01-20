@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "sessionId": "0c269c9d-7e0a-4234-b859-55e4a53eb8a1",
+  "status": "running",
+  "startedAt": "2026-01-20T18:48:05.871Z",
+  "updatedAt": "2026-01-20T19:36:08.414Z",
+  "currentIteration": 9,
+  "maxIterations": 200,
+  "tasksCompleted": 9,
+  "isPaused": false,
+  "agentPlugin": "claude",
+  "trackerState": {
+    "plugin": "beads-bv",
+    "epicId": "herdctl-giz",
+    "totalTasks": 9,
+    "tasks": [
+      {
+        "id": "herdctl-giz.2",
+        "title": "US-6: Initialize Project (herdctl init)",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "herdctl-giz.1",
+        "title": "US-9: Changesets & npm Publishing Setup",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "herdctl-giz.8",
+        "title": "US-5: Trigger Agent (herdctl trigger)",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "herdctl-giz.7",
+        "title": "US-4: View Logs (herdctl logs)",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "herdctl-giz.6",
+        "title": "US-3: Fleet Status (herdctl status)",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "herdctl-giz.5",
+        "title": "US-2: Stop Fleet (herdctl stop)",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "herdctl-giz.4",
+        "title": "US-1: Start Fleet (herdctl start)",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "herdctl-giz.3",
+        "title": "US-7: Validate Config (herdctl config)",
+        "status": "completed",
+        "completedInSession": true
+      },
+      {
+        "id": "herdctl-giz.9",
+        "title": "US-8: Job Management (herdctl jobs/job/cancel)",
+        "status": "completed",
+        "completedInSession": true
+      }
+    ]
+  },
+  "iterations": [
+    {
+      "iteration": 1,
+      "status": "completed",
+      "taskId": "herdctl-giz.1",
+      "taskTitle": "US-9: Changesets & npm Publishing Setup",
+      "taskCompleted": true,
+      "durationMs": 161499,
+      "startedAt": "2026-01-20T18:48:57.333Z",
+      "endedAt": "2026-01-20T18:51:38.832Z"
+    },
+    {
+      "iteration": 2,
+      "status": "completed",
+      "taskId": "herdctl-giz.2",
+      "taskTitle": "US-6: Initialize Project (herdctl init)",
+      "taskCompleted": true,
+      "durationMs": 295889,
+      "startedAt": "2026-01-20T18:51:40.159Z",
+      "endedAt": "2026-01-20T18:56:36.048Z"
+    },
+    {
+      "iteration": 3,
+      "status": "completed",
+      "taskId": "herdctl-giz.3",
+      "taskTitle": "US-7: Validate Config (herdctl config)",
+      "taskCompleted": true,
+      "durationMs": 336007,
+      "startedAt": "2026-01-20T18:56:37.368Z",
+      "endedAt": "2026-01-20T19:02:13.375Z"
+    },
+    {
+      "iteration": 4,
+      "status": "completed",
+      "taskId": "herdctl-giz.4",
+      "taskTitle": "US-1: Start Fleet (herdctl start)",
+      "taskCompleted": true,
+      "durationMs": 399469,
+      "startedAt": "2026-01-20T19:02:14.699Z",
+      "endedAt": "2026-01-20T19:08:54.168Z"
+    },
+    {
+      "iteration": 5,
+      "status": "completed",
+      "taskId": "herdctl-giz.5",
+      "taskTitle": "US-2: Stop Fleet (herdctl stop)",
+      "taskCompleted": true,
+      "durationMs": 201158,
+      "startedAt": "2026-01-20T19:08:55.479Z",
+      "endedAt": "2026-01-20T19:12:16.637Z"
+    },
+    {
+      "iteration": 6,
+      "status": "completed",
+      "taskId": "herdctl-giz.6",
+      "taskTitle": "US-3: Fleet Status (herdctl status)",
+      "taskCompleted": true,
+      "durationMs": 239497,
+      "startedAt": "2026-01-20T19:12:17.964Z",
+      "endedAt": "2026-01-20T19:16:17.461Z"
+    },
+    {
+      "iteration": 7,
+      "status": "completed",
+      "taskId": "herdctl-giz.7",
+      "taskTitle": "US-4: View Logs (herdctl logs)",
+      "taskCompleted": true,
+      "durationMs": 159038,
+      "startedAt": "2026-01-20T19:16:18.793Z",
+      "endedAt": "2026-01-20T19:18:57.831Z"
+    },
+    {
+      "iteration": 8,
+      "status": "completed",
+      "taskId": "herdctl-giz.8",
+      "taskTitle": "US-5: Trigger Agent (herdctl trigger)",
+      "taskCompleted": true,
+      "durationMs": 596712,
+      "startedAt": "2026-01-20T19:18:59.157Z",
+      "endedAt": "2026-01-20T19:28:55.869Z"
+    },
+    {
+      "iteration": 9,
+      "status": "completed",
+      "taskId": "herdctl-giz.9",
+      "taskTitle": "US-8: Job Management (herdctl jobs/job/cancel)",
+      "taskCompleted": true,
+      "durationMs": 431017,
+      "startedAt": "2026-01-20T19:28:57.204Z",
+      "endedAt": "2026-01-20T19:36:08.221Z"
+    }
+  ],
+  "skippedTaskIds": [],
+  "cwd": "/Users/ed/Code/overseer-clones/herdctl",
+  "activeTaskIds": [],
+  "subagentPanelVisible": true
+}

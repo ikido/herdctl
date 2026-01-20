@@ -1,10 +1,14 @@
 {
   "name": "@herdctl/core",
   "version": "0.0.1",
-  "private": true,
+  "description": "Core library for herdctl fleet management",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -20,5 +24,24 @@
     "@vitest/coverage-v8": "^4.0.17",
     "typescript": "^5",
     "vitest": "^4.0.17"
+  },
+  "homepage": "https://herdctl.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edspencer/herdctl"
+  },
+  "keywords": [
+    "claude",
+    "agent",
+    "fleet",
+    "orchestration",
+    "anthropic"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

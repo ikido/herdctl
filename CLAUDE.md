@@ -1,0 +1,119 @@
+# CLAUDE.md
+
+This file provides guidance for Claude Code when working in this repository.
+
+## Project Overview
+
+**herdctl** is a TypeScript-based system for managing fleets of autonomous Claude Code agents. It provides:
+- `@herdctl/core` - Core library for programmatic fleet management
+- `herdctl` - CLI for command-line fleet operations
+- `@herdctl/web` - Web dashboard (future)
+- `@herdctl/discord` - Discord connector (future)
+
+## Architecture Principles
+
+1. **Library-First Design**: All business logic lives in `@herdctl/core`
+2. **Thin Clients**: CLI, Web, and API are thin wrappers around FleetManager
+3. **Single Process Model**: Fleet runs in one process, agents are child processes
+
+## Repository Structure
+
+```
+herdctl/
+├── packages/
+│   ├── core/           # @herdctl/core - FleetManager, config, scheduler, state
+│   ├── cli/            # herdctl CLI - thin wrapper on FleetManager
+│   ├── web/            # @herdctl/web - Next.js dashboard (future)
+│   └── discord/        # @herdctl/discord - Discord bot (future)
+├── docs/               # Documentation site (Astro/Starlight) → herdctl.dev
+├── examples/           # Example configurations
+├── tasks/              # PRD drafts and task tracking
+├── SPEC.md             # Full specification document
+└── plan.md             # Implementation plan and PRD tracking
+```
+
+## Development Commands
+
+```bash
+pnpm install            # Install dependencies
+pnpm build              # Build all packages
+pnpm test               # Run all tests
+pnpm typecheck          # TypeScript type checking
+pnpm dev                # Development mode (watch)
+```
+
+## Code Conventions
+
+### TypeScript
+- Use strict TypeScript with explicit types
+- Prefer `interface` over `type` for object shapes
+- Use Zod for runtime validation schemas
+- Export types from package entry points
+
+### Testing
+- Tests live in `__tests__/` directories adjacent to source
+- Use Vitest for unit tests
+- Coverage thresholds: 85% lines/functions/statements, 65% branches
+- Mock external dependencies (SDK, file system, GitHub API)
+
+### Error Handling
+- Use typed error classes extending `FleetManagerError`
+- Provide type guards for error discrimination
+- Include actionable error messages
+
+## Release Workflow
+
+We use **changesets** for version management and **OIDC trusted publishing** for npm releases.
+
+### Creating Changesets
+
+When making changes that should be released:
+
+```bash
+pnpm changeset
+```
+
+This creates a changeset file describing the change. Commit it with your code.
+
+### Changeset Types
+- `major` - Breaking changes
+- `minor` - New features (backwards compatible)
+- `patch` - Bug fixes
+
+### Release Process (Automated)
+
+1. PRs with changesets are merged to main
+2. GitHub Action creates a "Version Packages" PR
+3. When that PR is merged, packages are published to npm via OIDC
+
+### OIDC Trusted Publishing
+
+As of December 2025, we use OIDC instead of npm tokens:
+- No long-lived secrets needed
+- GitHub Actions authenticates directly with npm
+- Provenance attestations are automatic
+
+## Key Files to Know
+
+| File | Purpose |
+|------|---------|
+| `SPEC.md` | Full project specification |
+| `plan.md` | Implementation plan, PRD tracking |
+| `packages/core/src/fleet-manager/` | FleetManager orchestration layer |
+| `packages/core/src/config/` | Configuration parsing and validation |
+| `packages/core/src/scheduler/` | Job scheduling |
+| `packages/core/src/state/` | State persistence (.herdctl/) |
+
+## Quality Gates
+
+Before merging:
+- `pnpm typecheck` passes
+- `pnpm test` passes with coverage thresholds
+- `pnpm build` succeeds
+
+## Documentation
+
+Documentation lives in `docs/` and deploys to herdctl.dev. When adding features:
+1. Update relevant docs in `docs/src/content/docs/`
+2. Run `pnpm build` in docs/ to verify
+3. Docs deploy automatically on merge to main

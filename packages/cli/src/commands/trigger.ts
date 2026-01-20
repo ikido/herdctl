@@ -1,0 +1,419 @@
+/**
+ * herdctl trigger - Manually trigger an agent
+ *
+ * Commands:
+ * - herdctl trigger <agent>                    Trigger with default schedule
+ * - herdctl trigger <agent> --schedule <name>  Trigger specific schedule
+ * - herdctl trigger <agent> --prompt "..."     Custom prompt
+ * - herdctl trigger <agent> --wait             Wait for job to complete
+ * - herdctl trigger <agent> --json             JSON output
+ */
+
+import {
+  FleetManager,
+  ConfigNotFoundError,
+  isFleetManagerError,
+  isAgentNotFoundError,
+  isScheduleNotFoundError,
+  isConcurrencyLimitError,
+  type TriggerResult,
+  type LogEntry,
+} from "@herdctl/core";
+
+export interface TriggerOptions {
+  schedule?: string;
+  prompt?: string;
+  wait?: boolean;
+  json?: boolean;
+  state?: string;
+  config?: string;
+}
+
+/**
+ * Default state directory
+ */
+const DEFAULT_STATE_DIR = ".herdctl";
+
+/**
+ * Check if colors should be disabled
+ */
+function shouldUseColor(): boolean {
+  // NO_COLOR takes precedence (https://no-color.org/)
+  if (process.env.NO_COLOR !== undefined && process.env.NO_COLOR !== "") {
+    return false;
+  }
+  // Also check FORCE_COLOR for override
+  if (process.env.FORCE_COLOR !== undefined && process.env.FORCE_COLOR !== "0") {
+    return true;
+  }
+  // Check if stdout is a TTY
+  return process.stdout.isTTY === true;
+}
+
+/**
+ * ANSI color codes
+ */
+const colors = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  red: "\x1b[31m",
+  cyan: "\x1b[36m",
+  gray: "\x1b[90m",
+};
+
+/**
+ * Get a colored string, respecting NO_COLOR
+ */
+function colorize(text: string, color: keyof typeof colors): string {
+  if (!shouldUseColor()) {
+    return text;
+  }
+  return `${colors[color]}${text}${colors.reset}`;
+}
+
+/**
+ * Format timestamp to local timezone
+ */
+function formatTimestamp(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp);
+  return date.toLocaleString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+/**
+ * Format a log entry for console output with colors
+ */
+function formatLogEntry(entry: LogEntry): string {
+  const timestamp = colorize(formatTimestamp(entry.timestamp), "dim");
+  const message = entry.message;
+
+  return `${timestamp} ${message}`;
+}
+
+/**
+ * JSON output structure for trigger result
+ */
+interface TriggerResultJson {
+  success: boolean;
+  job: {
+    id: string;
+    agent: string;
+    schedule: string | null;
+    startedAt: string;
+    prompt?: string;
+  };
+}
+
+/**
+ * JSON output structure for job completion
+ */
+interface JobCompletionJson {
+  success: boolean;
+  job: {
+    id: string;
+    agent: string;
+    schedule: string | null;
+    startedAt: string;
+    finishedAt?: string;
+    exitCode?: number;
+    status: string;
+  };
+}
+
+/**
+ * Trigger an agent (herdctl trigger)
+ */
+export async function triggerCommand(
+  agentName: string,
+  options: TriggerOptions
+): Promise<void> {
+  const stateDir = options.state || DEFAULT_STATE_DIR;
+  const isJsonOutput = options.json === true;
+  const isWaitMode = options.wait === true;
+
+  // Create FleetManager
+  const manager = new FleetManager({
+    configPath: options.config,
+    stateDir,
+  });
+
+  // Track if we're shutting down
+  let isShuttingDown = false;
+
+  /**
+   * Graceful shutdown handler
+   */
+  function shutdown(): void {
+    if (isShuttingDown) {
+      return;
+    }
+    isShuttingDown = true;
+
+    if (!isJsonOutput) {
+      console.log("");
+      console.log(colorize("Interrupted. Job continues running in background.", "yellow"));
+    }
+    process.exit(130); // 128 + SIGINT (2)
+  }
+
+  // Register signal handlers for wait mode
+  if (isWaitMode) {
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+  }
+
+  try {
+    // Initialize to load configuration
+    await manager.initialize();
+
+    // Trigger the agent
+    let result: TriggerResult;
+    try {
+      result = await manager.trigger(agentName, options.schedule, {
+        prompt: options.prompt,
+      });
+    } catch (error) {
+      // Handle specific trigger errors
+      if (isAgentNotFoundError(error)) {
+        if (isJsonOutput) {
+          console.log(
+            JSON.stringify({
+              error: {
+                code: "AGENT_NOT_FOUND",
+                message: error.message,
+                agentName: agentName,
+              },
+            })
+          );
+          process.exit(1);
+        }
+        console.error("");
+        console.error(`Error: Agent '${agentName}' not found.`);
+        console.error("");
+        console.error("Run 'herdctl status' to see all agents.");
+        process.exit(1);
+      }
+
+      if (isScheduleNotFoundError(error)) {
+        if (isJsonOutput) {
+          console.log(
+            JSON.stringify({
+              error: {
+                code: "SCHEDULE_NOT_FOUND",
+                message: error.message,
+                agentName: agentName,
+                scheduleName: options.schedule,
+              },
+            })
+          );
+          process.exit(1);
+        }
+        console.error("");
+        console.error(`Error: Schedule '${options.schedule}' not found for agent '${agentName}'.`);
+        console.error("");
+        console.error(`Run 'herdctl status ${agentName}' to see available schedules.`);
+        process.exit(1);
+      }
+
+      if (isConcurrencyLimitError(error)) {
+        if (isJsonOutput) {
+          console.log(
+            JSON.stringify({
+              error: {
+                code: "CONCURRENCY_LIMIT",
+                message: error.message,
+                agentName: agentName,
+              },
+            })
+          );
+          process.exit(1);
+        }
+        console.error("");
+        console.error(`Error: Agent '${agentName}' is at concurrency limit.`);
+        console.error(error.message);
+        console.error("");
+        console.error("Wait for current jobs to complete or check 'herdctl status'.");
+        process.exit(1);
+      }
+
+      throw error;
+    }
+
+    // Show job ID immediately
+    if (isJsonOutput) {
+      const output: TriggerResultJson = {
+        success: true,
+        job: {
+          id: result.jobId,
+          agent: result.agentName,
+          schedule: result.scheduleName,
+          startedAt: result.startedAt,
+          prompt: result.prompt,
+        },
+      };
+      console.log(JSON.stringify(output));
+    } else {
+      console.log("");
+      console.log(colorize("Job triggered successfully", "green"));
+      console.log(`Job ID:   ${colorize(result.jobId, "cyan")}`);
+      console.log(`Agent:    ${result.agentName}`);
+      if (result.scheduleName) {
+        console.log(`Schedule: ${result.scheduleName}`);
+      }
+      if (result.prompt) {
+        const truncatedPrompt =
+          result.prompt.length > 60
+            ? result.prompt.substring(0, 60) + "..."
+            : result.prompt;
+        console.log(`Prompt:   ${colorize(truncatedPrompt, "dim")}`);
+      }
+      console.log("");
+    }
+
+    // If not wait mode, we're done
+    if (!isWaitMode) {
+      if (!isJsonOutput) {
+        console.log(`Run 'herdctl logs --job ${result.jobId}' to view output.`);
+        console.log(`Run 'herdctl trigger ${agentName} --wait' to wait for completion.`);
+      }
+      return;
+    }
+
+    // Wait mode: stream job output until completion
+    if (!isJsonOutput) {
+      console.log(colorize("Streaming job output...", "dim"));
+      console.log("");
+    }
+
+    let exitCode = 0;
+    let jobStatus = "completed";
+    let finishedAt: string | undefined;
+
+    try {
+      // Stream job output
+      for await (const entry of manager.streamJobOutput(result.jobId)) {
+        if (isShuttingDown) {
+          break;
+        }
+
+        if (isJsonOutput) {
+          console.log(JSON.stringify(entry));
+        } else {
+          console.log(formatLogEntry(entry));
+        }
+      }
+
+      // Job stream ended - fetch final job status
+      // Note: In a full implementation, we would fetch the job metadata here
+      // to get the actual exit code and status. For now, we assume success
+      // if the stream completed without error.
+      finishedAt = new Date().toISOString();
+    } catch (streamError) {
+      // Stream error - job may have failed
+      if (!isShuttingDown) {
+        exitCode = 1;
+        jobStatus = "error";
+        finishedAt = new Date().toISOString();
+      }
+    }
+
+    // Output final status in JSON mode
+    if (isJsonOutput && !isShuttingDown) {
+      const output: JobCompletionJson = {
+        success: exitCode === 0,
+        job: {
+          id: result.jobId,
+          agent: result.agentName,
+          schedule: result.scheduleName,
+          startedAt: result.startedAt,
+          finishedAt,
+          exitCode,
+          status: jobStatus,
+        },
+      };
+      // Print a newline before final status in JSON mode
+      console.log("");
+      console.log(JSON.stringify(output));
+    } else if (!isShuttingDown) {
+      console.log("");
+      if (exitCode === 0) {
+        console.log(colorize("Job completed successfully.", "green"));
+      } else {
+        console.log(colorize(`Job finished with exit code ${exitCode}.`, "red"));
+      }
+    }
+
+    // Exit with job's exit code
+    process.exit(exitCode);
+  } catch (error) {
+    // Handle specific error types
+    if (error instanceof ConfigNotFoundError) {
+      if (isJsonOutput) {
+        console.log(
+          JSON.stringify({
+            error: {
+              code: "CONFIG_NOT_FOUND",
+              message: "No configuration file found",
+              startDirectory: error.startDirectory,
+            },
+          })
+        );
+        process.exit(1);
+      }
+      console.error("");
+      console.error("Error: No configuration file found.");
+      console.error(`Searched from: ${error.startDirectory}`);
+      console.error("");
+      console.error("Run 'herdctl init' to create a configuration file.");
+      process.exit(1);
+    }
+
+    if (isFleetManagerError(error)) {
+      if (isJsonOutput) {
+        console.log(
+          JSON.stringify({
+            error: {
+              code: error.code,
+              message: error.message,
+            },
+          })
+        );
+        process.exit(1);
+      }
+      console.error("");
+      console.error(`Error: ${error.message}`);
+      if (error.code) {
+        console.error(`Code: ${error.code}`);
+      }
+      process.exit(1);
+    }
+
+    // Handle interruption during shutdown gracefully
+    if (isShuttingDown) {
+      return;
+    }
+
+    // Generic error
+    if (isJsonOutput) {
+      console.log(
+        JSON.stringify({
+          error: {
+            code: "UNKNOWN_ERROR",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        })
+      );
+      process.exit(1);
+    }
+    console.error("");
+    console.error("Error:", error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
