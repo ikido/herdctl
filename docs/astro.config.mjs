@@ -117,6 +117,7 @@ export default defineConfig({
 					label: 'Internals',
 					collapsed: true,
 					items: [
+						{ label: 'Runner', slug: 'internals/runner' },
 						{ label: 'State Management', slug: 'internals/state-management' },
 					],
 				},

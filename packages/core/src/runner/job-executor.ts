@@ -1,0 +1,448 @@
+/**
+ * Job executor for running agents with streaming output to job logs
+ *
+ * Manages the lifecycle of agent execution including:
+ * - Creating job records before execution
+ * - Streaming all SDK messages to job output in real-time
+ * - Updating job status and metadata on completion
+ */
+
+import { join } from "node:path";
+import type {
+  RunnerOptions,
+  RunnerOptionsWithCallbacks,
+  RunnerResult,
+  RunnerErrorDetails,
+  SDKMessage,
+} from "./types.js";
+import {
+  RunnerError,
+  SDKInitializationError,
+  SDKStreamingError,
+  MalformedResponseError,
+  wrapError,
+  classifyError,
+  buildErrorMessage,
+} from "./errors.js";
+import { toSDKOptions } from "./sdk-adapter.js";
+import {
+  processSDKMessage,
+  isTerminalMessage,
+  extractSummary,
+} from "./message-processor.js";
+import {
+  createJob,
+  updateJob,
+  appendJobOutput,
+  getJobOutputPath,
+  updateSessionInfo,
+  getSessionInfo,
+  type JobMetadata,
+  type TriggerType,
+  type SessionInfo,
+} from "../state/index.js";
+
+// =============================================================================
+// Types
+// =============================================================================
+
+/**
+ * Logger interface for job executor
+ */
+export interface JobExecutorLogger {
+  warn: (message: string) => void;
+  error: (message: string) => void;
+  info?: (message: string) => void;
+}
+
+/**
+ * Options for job executor
+ */
+export interface JobExecutorOptions {
+  /** Logger for warnings and errors */
+  logger?: JobExecutorLogger;
+}
+
+/**
+ * SDK query function type (for dependency injection)
+ */
+export type SDKQueryFunction = (params: {
+  prompt: string;
+  options?: Record<string, unknown>;
+  abortController?: AbortController;
+}) => AsyncIterable<SDKMessage>;
+
+// =============================================================================
+// Default Logger
+// =============================================================================
+
+const defaultLogger: JobExecutorLogger = {
+  warn: (message: string) => console.warn(`[herdctl] ${message}`),
+  error: (message: string) => console.error(`[herdctl] ${message}`),
+  info: (message: string) => console.info(`[herdctl] ${message}`),
+};
+
+// =============================================================================
+// Job Executor Class
+// =============================================================================
+
+/**
+ * Executes agents with streaming output to job logs
+ *
+ * This class manages the complete lifecycle of agent execution:
+ * 1. Creates a job record before starting
+ * 2. Updates job status to 'running'
+ * 3. Streams all SDK messages to job output in real-time
+ * 4. Updates job with final status on completion
+ *
+ * @example
+ * ```typescript
+ * const executor = new JobExecutor(sdkQuery);
+ *
+ * const result = await executor.execute({
+ *   agent: resolvedAgent,
+ *   prompt: "Fix the bug in auth.ts",
+ *   stateDir: "/path/to/.herdctl",
+ *   triggerType: "manual",
+ * });
+ *
+ * console.log(`Job ${result.jobId} completed: ${result.success}`);
+ * ```
+ */
+export class JobExecutor {
+  private sdkQuery: SDKQueryFunction;
+  private logger: JobExecutorLogger;
+
+  /**
+   * Create a new job executor
+   *
+   * @param sdkQuery - The SDK query function to use for agent execution
+   * @param options - Optional configuration
+   */
+  constructor(sdkQuery: SDKQueryFunction, options: JobExecutorOptions = {}) {
+    this.sdkQuery = sdkQuery;
+    this.logger = options.logger ?? defaultLogger;
+  }
+
+  /**
+   * Execute an agent and stream output to job log
+   *
+   * @param options - Runner options including agent config and prompt
+   * @returns Result of the execution including job ID and status
+   */
+  async execute(options: RunnerOptionsWithCallbacks): Promise<RunnerResult> {
+    const { agent, prompt, stateDir, triggerType, schedule, onMessage } =
+      options;
+
+    const jobsDir = join(stateDir, "jobs");
+    let job: JobMetadata;
+    let sessionId: string | undefined;
+    let summary: string | undefined;
+    let lastError: RunnerError | undefined;
+    let errorDetails: RunnerErrorDetails | undefined;
+    let messagesReceived = 0;
+
+    // Determine trigger type: use 'fork' if forking, otherwise use provided or default to 'manual'
+    const effectiveTriggerType: TriggerType = options.fork
+      ? "fork"
+      : ((triggerType ?? "manual") as TriggerType);
+
+    // Step 1: Create job record
+    try {
+      job = await createJob(jobsDir, {
+        agent: agent.name,
+        trigger_type: effectiveTriggerType,
+        prompt,
+        schedule,
+        forked_from: options.fork ? options.forkedFrom : undefined,
+      });
+
+      this.logger.info?.(`Created job ${job.id} for agent ${agent.name}`);
+    } catch (error) {
+      this.logger.error(`Failed to create job: ${(error as Error).message}`);
+      throw error;
+    }
+
+    // Step 2: Update job status to 'running'
+    try {
+      await updateJob(jobsDir, job.id, {
+        status: "running",
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to update job status to running: ${(error as Error).message}`
+      );
+      // Continue execution - job was created
+    }
+
+    // Step 3: Build SDK options
+    const sdkOptions = toSDKOptions(agent, {
+      resume: options.resume,
+      fork: options.fork ? true : undefined,
+    });
+
+    // Step 4: Execute agent and stream output
+    try {
+      let messages: AsyncIterable<SDKMessage>;
+
+      // Catch SDK initialization errors (e.g., missing API key)
+      try {
+        messages = this.sdkQuery({
+          prompt,
+          options: sdkOptions as Record<string, unknown>,
+        });
+      } catch (initError) {
+        // Wrap initialization errors with context
+        throw new SDKInitializationError(
+          buildErrorMessage((initError as Error).message, {
+            jobId: job.id,
+            agentName: agent.name,
+          }),
+          {
+            jobId: job.id,
+            agentName: agent.name,
+            cause: initError as Error,
+          }
+        );
+      }
+
+      for await (const sdkMessage of messages) {
+        messagesReceived++;
+
+        // Process the message safely (handles malformed responses)
+        let processed;
+        try {
+          processed = processSDKMessage(sdkMessage);
+        } catch (processError) {
+          // Log but don't crash on malformed messages
+          this.logger.warn(
+            `Malformed SDK message received: ${(processError as Error).message}`
+          );
+
+          // Write a warning to job output
+          try {
+            await appendJobOutput(jobsDir, job.id, {
+              type: "error",
+              message: `Malformed SDK message: ${(processError as Error).message}`,
+              code: "MALFORMED_MESSAGE",
+            });
+          } catch {
+            // Ignore output write failures for malformed message warnings
+          }
+
+          // Continue processing other messages
+          continue;
+        }
+
+        // Write to job output immediately (no buffering)
+        try {
+          await appendJobOutput(jobsDir, job.id, processed.output);
+        } catch (outputError) {
+          this.logger.warn(
+            `Failed to write job output: ${(outputError as Error).message}`
+          );
+          // Continue processing - don't fail execution due to logging issues
+        }
+
+        // Extract session ID if present
+        if (processed.sessionId) {
+          sessionId = processed.sessionId;
+        }
+
+        // Extract summary if present
+        const messageSummary = extractSummary(sdkMessage);
+        if (messageSummary) {
+          summary = messageSummary;
+        }
+
+        // Call user's onMessage callback if provided
+        if (onMessage) {
+          try {
+            await onMessage(sdkMessage);
+          } catch (callbackError) {
+            this.logger.warn(
+              `onMessage callback error: ${(callbackError as Error).message}`
+            );
+          }
+        }
+
+        // Check for terminal messages
+        if (isTerminalMessage(sdkMessage)) {
+          if (sdkMessage.type === "error") {
+            const errorMessage =
+              (sdkMessage.message as string) ?? "Agent execution failed";
+            lastError = new SDKStreamingError(
+              buildErrorMessage(errorMessage, {
+                jobId: job.id,
+                agentName: agent.name,
+              }),
+              {
+                jobId: job.id,
+                agentName: agent.name,
+                code: sdkMessage.code as string | undefined,
+                messagesReceived,
+              }
+            );
+          }
+          break;
+        }
+      }
+    } catch (error) {
+      // Wrap the error with context if not already a RunnerError
+      lastError = wrapError(error, {
+        jobId: job.id,
+        agentName: agent.name,
+        phase: messagesReceived === 0 ? "init" : "streaming",
+      });
+
+      // Add messages received count for streaming errors
+      if (lastError instanceof SDKStreamingError && messagesReceived > 0) {
+        (lastError as SDKStreamingError & { messagesReceived?: number }).messagesReceived = messagesReceived;
+      }
+
+      // Log the error with context
+      this.logger.error(
+        `${lastError.name}: ${lastError.message}`
+      );
+
+      // Write error to job output with full context
+      try {
+        await appendJobOutput(jobsDir, job.id, {
+          type: "error",
+          message: lastError.message,
+          code: (lastError as SDKStreamingError).code ?? (lastError.cause as NodeJS.ErrnoException)?.code,
+          stack: lastError.stack,
+        });
+      } catch (outputError) {
+        this.logger.warn(
+          `Failed to write error to job output: ${(outputError as Error).message}`
+        );
+      }
+    }
+
+    // Build error details for programmatic access
+    if (lastError) {
+      errorDetails = {
+        message: lastError.message,
+        code:
+          (lastError as SDKStreamingError).code ??
+          (lastError.cause as NodeJS.ErrnoException)?.code,
+        stack: lastError.stack,
+      };
+
+      // Determine error type
+      if (lastError instanceof SDKInitializationError) {
+        errorDetails.type = "initialization";
+        errorDetails.recoverable = lastError.isNetworkError();
+      } else if (lastError instanceof SDKStreamingError) {
+        errorDetails.type = "streaming";
+        errorDetails.recoverable = lastError.isRecoverable();
+        errorDetails.messagesReceived = lastError.messagesReceived;
+      } else if (lastError instanceof MalformedResponseError) {
+        errorDetails.type = "malformed_response";
+        errorDetails.recoverable = false;
+      } else {
+        errorDetails.type = "unknown";
+        errorDetails.recoverable = false;
+      }
+    }
+
+    // Step 5: Update job with final status
+    const success = !lastError;
+    const finishedAt = new Date().toISOString();
+
+    // Determine exit reason based on error classification
+    const exitReason = success ? "success" : classifyError(lastError!);
+
+    try {
+      await updateJob(jobsDir, job.id, {
+        status: success ? "completed" : "failed",
+        finished_at: finishedAt,
+        session_id: sessionId,
+        summary,
+        exit_reason: exitReason,
+        output_file: getJobOutputPath(jobsDir, job.id),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to update job final status: ${(error as Error).message}`
+      );
+    }
+
+    // Step 6: Persist session info for resume capability
+    if (sessionId) {
+      try {
+        const sessionsDir = join(stateDir, "sessions");
+
+        // Get existing session to determine if updating or creating
+        const existingSession = await getSessionInfo(sessionsDir, agent.name);
+
+        await updateSessionInfo(sessionsDir, agent.name, {
+          session_id: sessionId,
+          job_count: (existingSession?.job_count ?? 0) + 1,
+          mode: existingSession?.mode ?? "autonomous",
+        });
+
+        this.logger.info?.(
+          `Persisted session ${sessionId} for agent ${agent.name}`
+        );
+      } catch (sessionError) {
+        this.logger.warn(
+          `Failed to persist session info: ${(sessionError as Error).message}`
+        );
+        // Continue - session persistence is non-fatal
+      }
+    }
+
+    // Calculate duration
+    const startTime = new Date(job.started_at).getTime();
+    const endTime = new Date(finishedAt).getTime();
+    const durationSeconds = Math.round((endTime - startTime) / 1000);
+
+    return {
+      success,
+      jobId: job.id,
+      sessionId,
+      summary,
+      error: lastError,
+      errorDetails,
+      durationSeconds,
+    };
+  }
+}
+
+// =============================================================================
+// Convenience Function
+// =============================================================================
+
+/**
+ * Execute an agent with streaming output to job log
+ *
+ * This is a convenience function that creates a JobExecutor and runs
+ * a single execution. For multiple executions, prefer creating a
+ * JobExecutor instance directly.
+ *
+ * @param sdkQuery - The SDK query function
+ * @param options - Runner options including agent config and prompt
+ * @param executorOptions - Optional executor configuration
+ * @returns Result of the execution
+ *
+ * @example
+ * ```typescript
+ * import { query } from "@anthropic-ai/claude-agent-sdk";
+ *
+ * const result = await executeJob(query, {
+ *   agent: resolvedAgent,
+ *   prompt: "Fix the bug",
+ *   stateDir: "/path/to/.herdctl",
+ * });
+ * ```
+ */
+export async function executeJob(
+  sdkQuery: SDKQueryFunction,
+  options: RunnerOptionsWithCallbacks,
+  executorOptions: JobExecutorOptions = {}
+): Promise<RunnerResult> {
+  const executor = new JobExecutor(sdkQuery, executorOptions);
+  return executor.execute(options);
+}

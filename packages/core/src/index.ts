@@ -19,8 +19,8 @@ export * from "./config/index.js";
 // State exports (PRD 2)
 export * from "./state/index.js";
 
-// Runner exports (PRD 3)
-// export * from './runner';
+// Runner exports (PRD 4)
+export * from "./runner/index.js";
 
 // Work source exports (PRD 4)
 // export * from './sources';

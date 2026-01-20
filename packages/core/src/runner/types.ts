@@ -1,0 +1,158 @@
+/**
+ * Type definitions for the agent runner module
+ *
+ * Defines options, results, and SDK-related types for agent execution
+ */
+
+import type { ResolvedAgent } from "../config/index.js";
+import type { TriggerType, JobOutputInput } from "../state/index.js";
+
+// =============================================================================
+// Runner Options Types
+// =============================================================================
+
+/**
+ * Options for running an agent
+ */
+export interface RunnerOptions {
+  /** Fully resolved agent configuration */
+  agent: ResolvedAgent;
+  /** The prompt to send to the agent */
+  prompt: string;
+  /** Path to the .herdctl directory */
+  stateDir: string;
+  /** How this run was triggered */
+  triggerType?: TriggerType;
+  /** Schedule name (if triggered by schedule) */
+  schedule?: string;
+  /** Session ID to resume (mutually exclusive with fork) */
+  resume?: string;
+  /** Fork from this session ID */
+  fork?: string;
+  /** Parent job ID when forking (used with fork option) */
+  forkedFrom?: string;
+}
+
+/**
+ * SDK message types (as received from Claude Agent SDK)
+ */
+export interface SDKMessage {
+  type: "system" | "assistant" | "tool_use" | "tool_result" | "error";
+  subtype?: string;
+  content?: string;
+  session_id?: string;
+  name?: string;
+  input?: unknown;
+  tool_use_id?: string;
+  message?: string;
+  code?: string;
+  // Allow additional SDK-specific fields
+  [key: string]: unknown;
+}
+
+/**
+ * Callback for receiving messages during execution
+ */
+export type MessageCallback = (message: SDKMessage) => void | Promise<void>;
+
+/**
+ * Extended options including callbacks
+ */
+export interface RunnerOptionsWithCallbacks extends RunnerOptions {
+  /** Called for each message from the SDK */
+  onMessage?: MessageCallback;
+}
+
+// =============================================================================
+// Runner Result Types
+// =============================================================================
+
+/**
+ * Detailed error information for failed runs
+ */
+export interface RunnerErrorDetails {
+  /** The error message */
+  message: string;
+  /** Error code if available (e.g., ETIMEDOUT, ECONNREFUSED) */
+  code?: string;
+  /** The type of error (for categorization) */
+  type?: "initialization" | "streaming" | "malformed_response" | "unknown";
+  /** Whether this error is potentially recoverable (e.g., rate limit, network) */
+  recoverable?: boolean;
+  /** Number of messages received before error (for streaming errors) */
+  messagesReceived?: number;
+  /** Stack trace if available */
+  stack?: string;
+}
+
+/**
+ * Result of running an agent
+ */
+export interface RunnerResult {
+  /** Whether the run completed successfully */
+  success: boolean;
+  /** The job ID for this run */
+  jobId: string;
+  /** The session ID (for resume/fork) */
+  sessionId?: string;
+  /** Brief summary of what was accomplished */
+  summary?: string;
+  /** Error if the run failed */
+  error?: Error;
+  /** Detailed error information for programmatic access */
+  errorDetails?: RunnerErrorDetails;
+  /** Duration in seconds */
+  durationSeconds?: number;
+}
+
+// =============================================================================
+// SDK Option Types
+// =============================================================================
+
+/**
+ * MCP server configuration for SDK
+ */
+export interface SDKMcpServerConfig {
+  type?: "http";
+  url?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/**
+ * System prompt configuration for SDK
+ */
+export type SDKSystemPrompt =
+  | { type: "preset"; preset: string }
+  | { type: "custom"; content: string };
+
+/**
+ * SDK query options (matching Claude Agent SDK types)
+ */
+export interface SDKQueryOptions {
+  allowedTools?: string[];
+  deniedTools?: string[];
+  permissionMode?: "default" | "acceptEdits" | "bypassPermissions" | "plan";
+  systemPrompt?: SDKSystemPrompt;
+  settingSources?: string[];
+  mcpServers?: Record<string, SDKMcpServerConfig>;
+  resume?: string;
+  forkSession?: boolean;
+}
+
+// =============================================================================
+// Message Processing Types
+// =============================================================================
+
+/**
+ * Result of processing an SDK message
+ */
+export interface ProcessedMessage {
+  /** The message transformed for job output */
+  output: JobOutputInput;
+  /** Session ID if this was an init message */
+  sessionId?: string;
+  /** Whether this is the final message */
+  isFinal?: boolean;
+}
