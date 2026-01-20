@@ -95,6 +95,7 @@ export default defineConfig({
 					collapsed: true,
 					items: [
 						{ label: 'Agents', slug: 'concepts/agents' },
+						{ label: 'Work Sources', slug: 'concepts/work-sources' },
 						{ label: 'Schedules', slug: 'concepts/schedules' },
 						{ label: 'Triggers', slug: 'concepts/triggers' },
 						{ label: 'Jobs', slug: 'concepts/jobs' },
@@ -108,6 +109,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Fleet Config', slug: 'configuration/fleet-config' },
 						{ label: 'Agent Config', slug: 'configuration/agent-config' },
+						{ label: 'GitHub Work Source', slug: 'configuration/github-work-source' },
 						{ label: 'Permissions', slug: 'configuration/permissions' },
 						{ label: 'MCP Servers', slug: 'configuration/mcp-servers' },
 						{ label: 'Environment', slug: 'configuration/environment' },

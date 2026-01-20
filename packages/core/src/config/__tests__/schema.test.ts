@@ -6,6 +6,9 @@ import {
   PermissionsSchema,
   PermissionModeSchema,
   WorkSourceSchema,
+  GitHubWorkSourceSchema,
+  GitHubAuthSchema,
+  BaseWorkSourceSchema,
   DockerSchema,
   ChatSchema,
   WebhooksSchema,
@@ -288,7 +291,7 @@ describe("WorkSourceSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("parses github type", () => {
+  it("parses minimal github type (base schema)", () => {
     const result = WorkSourceSchema.safeParse({ type: "github" });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -296,7 +299,7 @@ describe("WorkSourceSchema", () => {
     }
   });
 
-  it("parses with labels", () => {
+  it("parses with labels (base schema)", () => {
     const workSource = {
       type: "github",
       labels: {
@@ -316,6 +319,402 @@ describe("WorkSourceSchema", () => {
   it("rejects invalid type", () => {
     const result = WorkSourceSchema.safeParse({ type: "jira" });
     expect(result.success).toBe(false);
+  });
+
+  it("parses full GitHub work source configuration", () => {
+    const workSource = {
+      type: "github",
+      repo: "owner/repo-name",
+      labels: {
+        ready: "ready-for-agent",
+        in_progress: "agent-working",
+      },
+      exclude_labels: ["blocked", "wip"],
+      cleanup_on_failure: true,
+      auth: {
+        token_env: "MY_GITHUB_TOKEN",
+      },
+    };
+    const result = WorkSourceSchema.safeParse(workSource);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.type).toBe("github");
+      expect(result.data).toHaveProperty("repo", "owner/repo-name");
+    }
+  });
+});
+
+describe("GitHubWorkSourceSchema", () => {
+  describe("repo field validation", () => {
+    it("requires repo field", () => {
+      const result = GitHubWorkSourceSchema.safeParse({ type: "github" });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((i) => i.path.includes("repo"))).toBe(
+          true
+        );
+      }
+    });
+
+    it("accepts valid owner/repo format", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "octocat/hello-world",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.repo).toBe("octocat/hello-world");
+      }
+    });
+
+    it("accepts repo with hyphens and underscores", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "my-org/my_repo-name",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts repo with dots", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "org.name/repo.name",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts repo with numbers", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "org123/repo456",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects repo without slash", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "just-repo-name",
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].message).toContain("owner/repo");
+      }
+    });
+
+    it("rejects repo with multiple slashes", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo/extra",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects empty repo", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects repo with spaces", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner name/repo name",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("provides clear error message for invalid repo format", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "invalid",
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const repoError = result.error.issues.find((i) =>
+          i.path.includes("repo")
+        );
+        expect(repoError?.message).toContain("owner/repo");
+        expect(repoError?.message).toContain("octocat/hello-world");
+      }
+    });
+  });
+
+  describe("labels field", () => {
+    it("applies default labels when not specified", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.labels.ready).toBe("ready");
+        expect(result.data.labels.in_progress).toBe("agent-working");
+      }
+    });
+
+    it("allows custom ready label", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        labels: { ready: "custom-ready" },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.labels.ready).toBe("custom-ready");
+        expect(result.data.labels.in_progress).toBe("agent-working");
+      }
+    });
+
+    it("allows custom in_progress label", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        labels: { in_progress: "working-on-it" },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.labels.ready).toBe("ready");
+        expect(result.data.labels.in_progress).toBe("working-on-it");
+      }
+    });
+
+    it("allows both custom labels", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        labels: {
+          ready: "todo",
+          in_progress: "doing",
+        },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.labels.ready).toBe("todo");
+        expect(result.data.labels.in_progress).toBe("doing");
+      }
+    });
+  });
+
+  describe("exclude_labels field", () => {
+    it("defaults to empty array", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.exclude_labels).toEqual([]);
+      }
+    });
+
+    it("accepts array of strings", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        exclude_labels: ["blocked", "wip", "on-hold"],
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.exclude_labels).toEqual([
+          "blocked",
+          "wip",
+          "on-hold",
+        ]);
+      }
+    });
+
+    it("accepts empty array", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        exclude_labels: [],
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.exclude_labels).toEqual([]);
+      }
+    });
+
+    it("rejects non-string array items", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        exclude_labels: ["valid", 123],
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("cleanup_on_failure field", () => {
+    it("defaults to true", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.cleanup_on_failure).toBe(true);
+      }
+    });
+
+    it("accepts explicit true", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        cleanup_on_failure: true,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.cleanup_on_failure).toBe(true);
+      }
+    });
+
+    it("accepts false", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        cleanup_on_failure: false,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.cleanup_on_failure).toBe(false);
+      }
+    });
+
+    it("rejects non-boolean values", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        cleanup_on_failure: "yes",
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("auth field", () => {
+    it("defaults auth.token_env to GITHUB_TOKEN", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.auth.token_env).toBe("GITHUB_TOKEN");
+      }
+    });
+
+    it("accepts custom token_env", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        auth: { token_env: "MY_GITHUB_PAT" },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.auth.token_env).toBe("MY_GITHUB_PAT");
+      }
+    });
+
+    it("accepts empty auth object (uses defaults)", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+        auth: {},
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.auth.token_env).toBe("GITHUB_TOKEN");
+      }
+    });
+  });
+
+  describe("complete configuration", () => {
+    it("parses complete GitHub work source config", () => {
+      const config = {
+        type: "github",
+        repo: "my-org/my-repo",
+        labels: {
+          ready: "ready-for-work",
+          in_progress: "in-progress",
+        },
+        exclude_labels: ["blocked", "wip", "needs-review"],
+        cleanup_on_failure: false,
+        auth: {
+          token_env: "GH_ENTERPRISE_TOKEN",
+        },
+      };
+      const result = GitHubWorkSourceSchema.safeParse(config);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual({
+          type: "github",
+          repo: "my-org/my-repo",
+          labels: {
+            ready: "ready-for-work",
+            in_progress: "in-progress",
+          },
+          exclude_labels: ["blocked", "wip", "needs-review"],
+          cleanup_on_failure: false,
+          auth: {
+            token_env: "GH_ENTERPRISE_TOKEN",
+          },
+        });
+      }
+    });
+
+    it("applies all defaults for minimal config", () => {
+      const result = GitHubWorkSourceSchema.safeParse({
+        type: "github",
+        repo: "owner/repo",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.type).toBe("github");
+        expect(result.data.repo).toBe("owner/repo");
+        expect(result.data.labels.ready).toBe("ready");
+        expect(result.data.labels.in_progress).toBe("agent-working");
+        expect(result.data.exclude_labels).toEqual([]);
+        expect(result.data.cleanup_on_failure).toBe(true);
+        expect(result.data.auth.token_env).toBe("GITHUB_TOKEN");
+      }
+    });
+  });
+});
+
+describe("GitHubAuthSchema", () => {
+  it("applies default token_env", () => {
+    const result = GitHubAuthSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.token_env).toBe("GITHUB_TOKEN");
+    }
+  });
+
+  it("accepts custom token_env", () => {
+    const result = GitHubAuthSchema.safeParse({ token_env: "CUSTOM_TOKEN" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.token_env).toBe("CUSTOM_TOKEN");
+    }
+  });
+});
+
+describe("BaseWorkSourceSchema", () => {
+  it("parses minimal config", () => {
+    const result = BaseWorkSourceSchema.safeParse({ type: "github" });
+    expect(result.success).toBe(true);
+  });
+
+  it("parses with optional fields", () => {
+    const result = BaseWorkSourceSchema.safeParse({
+      type: "github",
+      labels: { ready: "todo" },
+      cleanup_in_progress: true,
+    });
+    expect(result.success).toBe(true);
   });
 });
 

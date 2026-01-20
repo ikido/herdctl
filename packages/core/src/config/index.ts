@@ -21,6 +21,9 @@ export {
   WorkSourceSchema,
   WorkSourceTypeSchema,
   WorkSourceLabelsSchema,
+  GitHubAuthSchema,
+  GitHubWorkSourceSchema,
+  BaseWorkSourceSchema,
   InstancesSchema,
   // Agent-specific schemas
   AgentConfigSchema,
@@ -46,6 +49,9 @@ export {
   type WorkSource,
   type WorkSourceType,
   type WorkSourceLabels,
+  type GitHubAuth,
+  type GitHubWorkSource,
+  type BaseWorkSource,
   type Instances,
   // Agent-specific types
   type AgentConfig,

@@ -22,8 +22,8 @@ export * from "./state/index.js";
 // Runner exports (PRD 4)
 export * from "./runner/index.js";
 
-// Work source exports (PRD 4)
-// export * from './sources';
+// Work source exports (PRD 5)
+export * from "./work-sources/index.js";
 
 // Scheduler exports (PRD 5)
 // export * from './scheduler';

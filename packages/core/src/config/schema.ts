@@ -40,11 +40,95 @@ export const WorkSourceLabelsSchema = z.object({
   in_progress: z.string().optional(),
 });
 
-export const WorkSourceSchema = z.object({
+/**
+ * Regex pattern for validating GitHub repository format (owner/repo)
+ * Supports alphanumeric characters, hyphens, underscores, and dots
+ */
+const GITHUB_REPO_PATTERN = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+
+/**
+ * Authentication configuration for GitHub work source
+ */
+export const GitHubAuthSchema = z.object({
+  /** Environment variable name containing the GitHub PAT (default: "GITHUB_TOKEN") */
+  token_env: z.string().optional().default("GITHUB_TOKEN"),
+});
+
+/**
+ * GitHub-specific work source configuration schema
+ *
+ * Extends the base work source with GitHub-specific fields for
+ * repository targeting, label-based workflow, and authentication.
+ *
+ * @example
+ * ```yaml
+ * work_source:
+ *   type: github
+ *   repo: owner/repo-name
+ *   labels:
+ *     ready: ready-for-agent
+ *     in_progress: agent-working
+ *   exclude_labels:
+ *     - blocked
+ *     - wip
+ *   cleanup_on_failure: true
+ *   auth:
+ *     token_env: GITHUB_TOKEN
+ * ```
+ */
+export const GitHubWorkSourceSchema = z.object({
+  type: z.literal("github"),
+  /** GitHub repository in owner/repo format (required) */
+  repo: z
+    .string()
+    .regex(
+      GITHUB_REPO_PATTERN,
+      "Repository must be in 'owner/repo' format (e.g., 'octocat/hello-world')"
+    ),
+  /** Labels for tracking work item state */
+  labels: z
+    .object({
+      /** Label marking issues as ready for agent work (default: "ready") */
+      ready: z.string().optional().default("ready"),
+      /** Label applied when an agent claims the issue (default: "agent-working") */
+      in_progress: z.string().optional().default("agent-working"),
+    })
+    .optional()
+    .default({}),
+  /** Labels to exclude from fetched issues (issues with any of these labels are skipped) */
+  exclude_labels: z.array(z.string()).optional().default([]),
+  /** Re-add ready label when releasing work on failure (default: true) */
+  cleanup_on_failure: z.boolean().optional().default(true),
+  /** Clean up in-progress labels on startup (backwards compatibility field) */
+  cleanup_in_progress: z.boolean().optional(),
+  /** Authentication configuration */
+  auth: GitHubAuthSchema.optional().default({}),
+});
+
+/**
+ * Base work source schema (minimal, for backwards compatibility)
+ * Used when only type and basic labels are specified
+ */
+export const BaseWorkSourceSchema = z.object({
   type: WorkSourceTypeSchema,
   labels: WorkSourceLabelsSchema.optional(),
   cleanup_in_progress: z.boolean().optional(),
 });
+
+/**
+ * Combined work source schema supporting both minimal and full configurations
+ *
+ * This schema uses a discriminated union based on the `type` field to support:
+ * - Full GitHub-specific configuration with all fields
+ * - Minimal configuration for backwards compatibility
+ *
+ * The schema will validate against GitHub-specific rules when type is "github"
+ * and all required fields are present, otherwise falls back to base schema.
+ */
+export const WorkSourceSchema = z.union([
+  GitHubWorkSourceSchema,
+  BaseWorkSourceSchema,
+]);
 
 // =============================================================================
 // Instance Schemas
@@ -238,6 +322,9 @@ export type BashPermissions = z.infer<typeof BashPermissionsSchema>;
 export type Permissions = z.infer<typeof PermissionsSchema>;
 export type WorkSourceType = z.infer<typeof WorkSourceTypeSchema>;
 export type WorkSourceLabels = z.infer<typeof WorkSourceLabelsSchema>;
+export type GitHubAuth = z.infer<typeof GitHubAuthSchema>;
+export type GitHubWorkSource = z.infer<typeof GitHubWorkSourceSchema>;
+export type BaseWorkSource = z.infer<typeof BaseWorkSourceSchema>;
 export type WorkSource = z.infer<typeof WorkSourceSchema>;
 export type Instances = z.infer<typeof InstancesSchema>;
 export type Docker = z.infer<typeof DockerSchema>;
