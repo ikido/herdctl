@@ -5,11 +5,16 @@
  */
 
 export {
+  ScheduleStatusSchema,
+  ScheduleStateSchema,
   AgentStatusSchema,
   AgentStateSchema,
   FleetMetadataSchema,
   FleetStateSchema,
   createInitialFleetState,
+  createDefaultScheduleState,
+  type ScheduleStatus,
+  type ScheduleState,
   type AgentStatus,
   type AgentState,
   type FleetMetadata,

@@ -80,6 +80,333 @@ schedules:
 | `prompt` | No | Instructions for this schedule |
 | `work_source` | No | Task source configuration (e.g., GitHub Issues) |
 
+## Interval Configuration
+
+Interval triggers are the most common schedule type for automated agents. They execute at fixed time intervals after the previous job completes.
+
+### Syntax
+
+```yaml
+schedules:
+  check-issues:
+    type: interval
+    interval: 5m
+    prompt: "Check for new issues and triage them."
+```
+
+### Supported Units
+
+| Unit | Description | Example | Milliseconds |
+|------|-------------|---------|--------------|
+| `s` | Seconds | `30s` | 30,000 |
+| `m` | Minutes | `5m` | 300,000 |
+| `h` | Hours | `1h` | 3,600,000 |
+| `d` | Days | `1d` | 86,400,000 |
+
+### Interval Syntax Rules
+
+- **Positive integers only**: No decimals (`5.5m` is invalid)
+- **No zero values**: `0m` is invalid
+- **No negative values**: `-5m` is invalid
+- **Single unit per interval**: Use `90m` instead of `1h30m`
+- **Case insensitive**: `5M` and `5m` are equivalent
+
+### Examples
+
+```yaml
+# Quick polling every 30 seconds
+schedules:
+  quick-check:
+    type: interval
+    interval: 30s
+
+# Standard 5-minute check
+schedules:
+  issue-check:
+    type: interval
+    interval: 5m
+
+# Hourly processing
+schedules:
+  hourly-sync:
+    type: interval
+    interval: 1h
+
+# Daily batch job
+schedules:
+  daily-cleanup:
+    type: interval
+    interval: 1d
+```
+
+## How Interval Timing Works
+
+Understanding how interval timing works is critical for planning your agent schedules.
+
+### Key Principle: After Completion, Not Start
+
+Intervals measure time **from the completion of the previous job**, not from when it started. This prevents job pile-up when execution time varies:
+
+```
+Timeline with 5-minute interval:
+
+10:00 - Job 1 starts
+10:03 - Job 1 completes (took 3 minutes)
+10:08 - Job 2 starts (5 minutes after 10:03)
+10:15 - Job 2 completes (took 7 minutes)
+10:20 - Job 3 starts (5 minutes after 10:15)
+```
+
+This design ensures:
+- **No overlapping jobs**: The next job can't start until the previous one finishes
+- **Predictable spacing**: There's always at least the interval duration between job starts
+- **Natural backpressure**: Long-running jobs don't cause pile-up
+
+### First Run Behavior
+
+When a schedule has never run before (no `last_run_at` in state), it triggers immediately:
+
+```
+New agent deployed at 10:00
+→ Schedule "check-issues" has no previous run
+→ First job triggers immediately at 10:00
+→ Job completes at 10:02
+→ Next job scheduled for 10:07 (5 minutes after completion)
+```
+
+### Clock Skew Handling
+
+If the calculated next trigger time is in the past (e.g., due to system sleep or clock adjustment), the schedule triggers immediately:
+
+```
+Last completion: 10:00
+Interval: 5m
+Expected next: 10:05
+Current time: 10:30 (system was asleep)
+→ Triggers immediately at 10:30
+```
+
+### Jitter (Thundering Herd Prevention)
+
+When many agents have the same interval, they can synchronize and all trigger simultaneously. The scheduler supports optional jitter (0-10%) to spread out triggers:
+
+```
+Without jitter:
+- Agent A: triggers at 10:00, 10:05, 10:10...
+- Agent B: triggers at 10:00, 10:05, 10:10...
+- Agent C: triggers at 10:00, 10:05, 10:10...
+
+With 5% jitter on 5-minute interval:
+- Agent A: triggers at 10:00, 10:05:12, 10:10:08...
+- Agent B: triggers at 10:00:05, 10:05:18, 10:10:02...
+- Agent C: triggers at 10:00:10, 10:05:05, 10:10:15...
+```
+
+## Concurrency Control with max_concurrent
+
+The `max_concurrent` setting limits how many jobs can run simultaneously for a single agent. This prevents resource exhaustion and ensures predictable behavior.
+
+### Configuration
+
+Set `max_concurrent` in the agent's `instances` configuration:
+
+```yaml
+# agents/issue-processor.yaml
+name: issue-processor
+description: "Processes GitHub issues"
+
+instances:
+  max_concurrent: 1  # Only one job at a time (default)
+
+schedules:
+  process-issues:
+    type: interval
+    interval: 5m
+    prompt: "Process the next ready issue."
+```
+
+### How It Works
+
+The scheduler tracks running jobs per agent and skips triggering if at capacity:
+
+```
+max_concurrent: 2
+
+10:00 - Job 1 starts (running: 1)
+10:05 - Job 2 starts (running: 2, at capacity)
+10:05 - Scheduler check: skipped, at capacity
+10:07 - Job 1 completes (running: 1)
+10:10 - Job 3 starts (running: 2)
+```
+
+### Skip Reason: at_capacity
+
+When a schedule is skipped due to capacity, the scheduler logs:
+
+```
+Skipping issue-processor/process-issues: at max capacity (2/2)
+```
+
+### Recommended Settings
+
+| Use Case | max_concurrent | Reason |
+|----------|----------------|--------|
+| Issue processing | 1 | Avoid duplicate work |
+| Monitoring/alerts | 1-2 | Limited parallelism |
+| Data sync | 1 | Ensure ordering |
+| Independent tasks | 2-4 | Parallel execution |
+
+### Example: Multiple Concurrent Jobs
+
+```yaml
+name: data-processor
+description: "Processes data from multiple sources"
+
+instances:
+  max_concurrent: 3  # Process up to 3 items simultaneously
+
+schedules:
+  process-queue:
+    type: interval
+    interval: 1m
+    prompt: "Process the next item from the work queue."
+    work_source:
+      type: github
+      labels:
+        ready: "ready"
+        in_progress: "processing"
+```
+
+## Schedule State and Monitoring
+
+Each schedule maintains state that tracks its execution history and status.
+
+### State Structure
+
+Schedule state is stored in `.herdctl/state.yaml`:
+
+```yaml
+agents:
+  my-agent:
+    status: idle
+    schedules:
+      check-issues:
+        status: idle           # idle | running | disabled
+        last_run_at: "2025-01-19T10:05:00Z"
+        next_run_at: "2025-01-19T10:10:00Z"
+        last_error: null
+```
+
+### State Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `idle` \| `running` \| `disabled` | Current schedule status |
+| `last_run_at` | ISO timestamp | When the schedule last completed |
+| `next_run_at` | ISO timestamp | When the schedule will next trigger |
+| `last_error` | string or null | Error message from last failure |
+
+### Schedule Statuses
+
+- **idle**: Schedule is waiting for its next trigger time
+- **running**: Schedule is currently executing a job
+- **disabled**: Schedule is disabled and won't trigger
+
+### Monitoring Schedule State
+
+Check schedule state using the CLI:
+
+```bash
+# View all agent states
+cat .herdctl/state.yaml
+
+# View specific agent schedules
+herdctl status my-agent
+```
+
+### Disabling Schedules
+
+To temporarily disable a schedule without removing it:
+
+```bash
+# Manually edit state (or use CLI when available)
+# Set schedule status to "disabled"
+```
+
+When a schedule is disabled:
+- The scheduler skips it during checks
+- It can be re-enabled by setting status to "idle"
+- Existing state (last_run_at, etc.) is preserved
+
+## Integration with Work Sources
+
+Schedules can include a work source to pull tasks from external systems like GitHub Issues.
+
+### Configuration
+
+```yaml
+schedules:
+  issue-processor:
+    type: interval
+    interval: 5m
+    prompt: "Process the next ready issue."
+    work_source:
+      type: github
+      labels:
+        ready: "ready"
+        in_progress: "in-progress"
+```
+
+### Execution Flow
+
+When a schedule with a work source triggers:
+
+1. **Check for work**: Query the work source for available items
+2. **Claim work item**: Apply `in_progress` label to claim the item
+3. **Build prompt**: Combine schedule prompt with work item details
+4. **Execute job**: Run the agent with the combined prompt
+5. **Report outcome**: Mark work item as complete or release on failure
+
+### Prompt Building
+
+The schedule prompt is combined with work item details:
+
+```
+# Schedule prompt:
+Process the next ready issue.
+
+# Combined prompt sent to agent:
+Process the next ready issue.
+
+---
+## Work Item
+
+**Title:** Fix authentication timeout
+**ID:** 42
+**URL:** https://github.com/org/repo/issues/42
+
+### Description
+Users are experiencing authentication timeouts after 30 minutes...
+
+### Metadata
+- **Labels:** bug, authentication
+- **Priority:** high
+```
+
+### No Work Available
+
+If no work items are available:
+- The job completes immediately
+- Schedule state is updated with completion time
+- Next trigger is calculated normally
+
+### Work Source Failure Handling
+
+If work source operations fail:
+- **Claim failure**: Job is aborted, schedule retries next interval
+- **Execution failure**: Work item is released back to the queue
+- **Report failure**: Logged but doesn't affect job outcome
+
 ## Trigger Types
 
 ### Interval Triggers
@@ -158,6 +485,9 @@ description: "Monitors infrastructure and handles deployments"
 
 workspace: infrastructure-repo
 repo: company/infrastructure
+
+instances:
+  max_concurrent: 2  # Allow 2 concurrent jobs
 
 schedules:
   # Quick health checks every 5 minutes
@@ -253,5 +583,7 @@ When a work source is configured, the schedule will:
 ## Related Concepts
 
 - [Triggers](/concepts/triggers/) - Detailed trigger configuration
+- [Work Sources](/concepts/work-sources/) - How agents get tasks
 - [Agents](/concepts/agents/) - What schedules run
 - [Jobs](/concepts/jobs/) - Schedule execution results
+- [State Management](/internals/state-management/) - How schedule state is stored

@@ -265,6 +265,7 @@ export const AgentConfigSchema = z.object({
   mcp_servers: z.record(z.string(), McpServerSchema).optional(),
   chat: AgentChatSchema.optional(),
   docker: DockerSchema.optional(),
+  instances: InstancesSchema.optional(),
   model: z.string().optional(),
   max_turns: z.number().int().positive().optional(),
   permission_mode: PermissionModeSchema.optional(),

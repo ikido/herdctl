@@ -409,6 +409,44 @@ describe("mergeAgentConfig", () => {
     });
   });
 
+  describe("instances merging", () => {
+    it("uses defaults instances when agent has none", () => {
+      const defaults: ExtendedDefaults = {
+        instances: {
+          max_concurrent: 3,
+        },
+      };
+      const agent: AgentConfig = { name: "test-agent" };
+      const result = mergeAgentConfig(defaults, agent);
+      expect(result.instances?.max_concurrent).toBe(3);
+    });
+
+    it("agent instances values override defaults", () => {
+      const defaults: ExtendedDefaults = {
+        instances: {
+          max_concurrent: 3,
+        },
+      };
+      const agent: AgentConfig = {
+        name: "test-agent",
+        instances: {
+          max_concurrent: 5,
+        },
+      };
+      const result = mergeAgentConfig(defaults, agent);
+      expect(result.instances?.max_concurrent).toBe(5);
+    });
+
+    it("handles missing instances in both defaults and agent", () => {
+      const defaults: ExtendedDefaults = {
+        model: "claude-sonnet-4-20250514",
+      };
+      const agent: AgentConfig = { name: "test-agent" };
+      const result = mergeAgentConfig(defaults, agent);
+      expect(result.instances).toBeUndefined();
+    });
+  });
+
   describe("scalar value merging", () => {
     it("uses defaults model when agent has none", () => {
       const defaults: ExtendedDefaults = {

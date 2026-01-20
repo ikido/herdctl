@@ -279,8 +279,42 @@ cat .herdctl/sessions/bragdoc-coder.json
 | Missing job output | Write failure | Check disk space, permissions |
 | Session won't resume | Invalid session ID | Clear session file |
 
+## Schedule State
+
+Each agent can have multiple schedules, each with its own state:
+
+```yaml
+agents:
+  my-agent:
+    status: idle
+    schedules:
+      check-issues:
+        status: idle           # idle | running | disabled
+        last_run_at: "2025-01-19T10:05:00Z"
+        next_run_at: "2025-01-19T10:10:00Z"
+        last_error: null
+      daily-report:
+        status: running
+        last_run_at: "2025-01-19T09:00:00Z"
+        next_run_at: null
+        last_error: null
+```
+
+### Schedule State Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `idle` \| `running` \| `disabled` | Current schedule status |
+| `last_run_at` | string (ISO) | When the schedule last completed |
+| `next_run_at` | string (ISO) | Calculated next trigger time |
+| `last_error` | string \| null | Error message from last failure |
+
+For more details on schedule state, see [Schedules - State and Monitoring](/concepts/schedules/#schedule-state-and-monitoring) and [Scheduler Internals](/internals/scheduler/).
+
 ## Related Concepts
 
 - [Sessions](/concepts/sessions/) - Understanding session persistence
 - [Jobs](/concepts/jobs/) - Job lifecycle and management
 - [Workspaces](/concepts/workspaces/) - Where agents operate
+- [Schedules](/concepts/schedules/) - Schedule configuration and state
+- [Scheduler Internals](/internals/scheduler/) - How the scheduler works

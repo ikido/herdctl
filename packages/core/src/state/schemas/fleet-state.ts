@@ -7,6 +7,29 @@
 import { z } from "zod";
 
 // =============================================================================
+// Schedule State Schemas
+// =============================================================================
+
+/**
+ * Possible states for a schedule
+ */
+export const ScheduleStatusSchema = z.enum(["idle", "running", "disabled"]);
+
+/**
+ * State information for a single schedule
+ */
+export const ScheduleStateSchema = z.object({
+  /** ISO timestamp of when this schedule last ran */
+  last_run_at: z.string().nullable().optional(),
+  /** ISO timestamp of when this schedule will next run */
+  next_run_at: z.string().nullable().optional(),
+  /** Current status of the schedule */
+  status: ScheduleStatusSchema.default("idle"),
+  /** Last error message if the schedule encountered an error */
+  last_error: z.string().nullable().optional(),
+});
+
+// =============================================================================
 // Agent Status Schemas
 // =============================================================================
 
@@ -33,6 +56,8 @@ export const AgentStateSchema = z.object({
   container_id: z.string().nullable().optional(),
   /** Error message if status is 'error' */
   error_message: z.string().nullable().optional(),
+  /** Map of schedule names to their state */
+  schedules: z.record(z.string(), ScheduleStateSchema).optional(),
 });
 
 // =============================================================================
@@ -61,6 +86,8 @@ export const FleetStateSchema = z.object({
 // Type Exports
 // =============================================================================
 
+export type ScheduleStatus = z.infer<typeof ScheduleStatusSchema>;
+export type ScheduleState = z.infer<typeof ScheduleStateSchema>;
 export type AgentStatus = z.infer<typeof AgentStatusSchema>;
 export type AgentState = z.infer<typeof AgentStateSchema>;
 export type FleetMetadata = z.infer<typeof FleetMetadataSchema>;
@@ -77,5 +104,17 @@ export function createInitialFleetState(): FleetState {
   return {
     fleet: {},
     agents: {},
+  };
+}
+
+/**
+ * Create a default schedule state
+ */
+export function createDefaultScheduleState(): ScheduleState {
+  return {
+    last_run_at: null,
+    next_run_at: null,
+    status: "idle",
+    last_error: null,
   };
 }

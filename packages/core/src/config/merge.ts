@@ -204,6 +204,14 @@ export function mergeAgentConfig(
     ) as AgentConfig["docker"];
   }
 
+  // Merge instances (deep merge)
+  if (defaults.instances || agent.instances) {
+    result.instances = deepMerge(
+      defaults.instances as Record<string, unknown> | undefined,
+      agent.instances as Record<string, unknown> | undefined
+    ) as AgentConfig["instances"];
+  }
+
   // Merge scalar values (agent takes precedence if defined)
   if (defaults.model !== undefined && result.model === undefined) {
     result.model = defaults.model;

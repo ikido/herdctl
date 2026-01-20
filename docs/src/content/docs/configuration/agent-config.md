@@ -73,6 +73,7 @@ permission_mode: acceptEdits
 | `system_prompt` | string | No | Custom system instructions for Claude |
 | `work_source` | object | No | Where the agent gets tasks |
 | `schedules` | object | No | Map of named schedule configurations |
+| `instances` | object | No | Concurrency and instance settings |
 | `session` | object | No | Session runtime settings |
 | `permissions` | object | No | Permission controls |
 | `mcp_servers` | object | No | MCP server configurations |
@@ -233,6 +234,56 @@ schedules:
 | `expression` | string | Cron expression (e.g., "0 9 * * 1-5") |
 | `prompt` | string | Task prompt for this schedule |
 | `work_source` | object | Override work source for this schedule |
+
+For more details on scheduling, see [Schedules](/concepts/schedules/) and [Triggers](/concepts/triggers/).
+
+### instances
+
+Configure concurrent execution limits for the agent.
+
+```yaml
+instances:
+  max_concurrent: 1
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_concurrent` | integer | `1` | Maximum simultaneous jobs for this agent |
+
+The `max_concurrent` setting controls how many schedule-triggered jobs can run simultaneously. When an agent reaches its limit, additional schedule triggers are skipped until a slot becomes available.
+
+**Example: Allow parallel processing**
+
+```yaml
+name: data-processor
+description: "Processes work items from a queue"
+
+instances:
+  max_concurrent: 3  # Process up to 3 items at once
+
+schedules:
+  process-queue:
+    type: interval
+    interval: 1m
+    prompt: "Process the next available item."
+    work_source:
+      type: github
+      labels:
+        ready: "ready"
+        in_progress: "processing"
+```
+
+**When to increase `max_concurrent`**:
+- Processing independent work items (e.g., separate GitHub issues)
+- Running short, non-conflicting tasks
+- When throughput is more important than ordering
+
+**When to keep `max_concurrent: 1`** (default):
+- Work items may conflict or depend on each other
+- Agent modifies shared resources
+- Order of execution matters
+
+For more details on concurrency, see [Schedules - Concurrency Control](/concepts/schedules/#concurrency-control-with-max_concurrent).
 
 ### session
 
@@ -646,5 +697,8 @@ herdctl validate agents/my-agent.yaml
 - [Fleet Configuration](/configuration/fleet-config/) — Global fleet settings
 - [Permissions](/configuration/permissions/) — Detailed permission controls
 - [MCP Servers](/configuration/mcp-servers/) — MCP server setup
-- [Schedules](/concepts/schedules/) — Schedule concepts
+- [Schedules](/concepts/schedules/) — Schedule concepts and interval timing
+- [Triggers](/concepts/triggers/) — Trigger types and configuration
+- [Work Sources](/concepts/work-sources/) — Task source integration
 - [Agents](/concepts/agents/) — Agent concepts
+- [Scheduling Troubleshooting](/guides/scheduling-troubleshooting/) — Debug scheduling issues
