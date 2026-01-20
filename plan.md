@@ -573,10 +573,10 @@ Added after PRD 7 to document the FleetManager API for library consumers. Includ
 | 6 | herdctl-core-scheduler | Interval scheduler | + Scheduling docs | ✓ |
 | 7 | herdctl-fleet-manager | FleetManager orchestration | + Library usage docs | ✓ |
 | - | Library Documentation | API docs, examples, recipes | Comprehensive library docs | ✓ |
-| **8** | **herdctl-cli** | **CLI commands** | **+ CLI Reference, Getting Started** | **Next** |
+| 8 | herdctl-cli | CLI commands | + CLI Reference, Getting Started | ✓ |
 | 9 | herdctl-docs-deploy | Deploy to herdctl.dev | Continuous deployment live | ✓ |
 
-After PRD 8, we have a working MVP that can:
+**MVP Complete!** The system can now:
 - Parse config files
 - Track state
 - Run agents via Claude SDK
