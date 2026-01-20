@@ -316,11 +316,8 @@ agents:
   - path: ./agents/bragdoc-marketer.yaml
   - path: ./agents/turtle-content.yaml
 
-# Chat connectors (optional)
-chat:
-  discord:
-    enabled: true
-    token_env: DISCORD_BOT_TOKEN
+# Note: Chat connectors (Discord, Slack) are configured per-agent, not at fleet level.
+# Each agent that needs chat has its own bot token. See agent configuration below.
 ```
 
 ### Agent Configuration (Coder Example)
@@ -431,18 +428,22 @@ session:
 
 ### Chat-Enabled Agent
 
+Each chat-enabled agent has its own Discord/Slack bot. This means each agent appears as a distinct "person" in chat - with its own name, avatar, and presence - rather than a single fleet-level bot routing to different agents.
+
 ```yaml
-# projects/bragdoc/agents/support.yaml
+# agents/support.yaml
 name: support
-type: support
 description: "Answers user questions in Discord"
 
 identity:
   claude_md: ./support-CLAUDE.md
 
-# Chat integration
+# Chat integration - this agent's own bot
 chat:
   discord:
+    # This agent's Discord bot token (create app in Discord Developer Portal)
+    bot_token_env: SUPPORT_DISCORD_TOKEN
+
     guilds:
       - id: "123456789"  # Bragdoc Discord server
         channels:
@@ -455,6 +456,18 @@ chat:
         dm:
           enabled: true
           mode: auto  # responds to all DMs automatically
+
+  slack:
+    # This agent's Slack app tokens (create app in Slack API)
+    bot_token_env: SUPPORT_SLACK_TOKEN
+    app_token_env: SUPPORT_SLACK_APP_TOKEN  # For Socket Mode
+
+    workspaces:
+      - id: "T12345678"
+        channels:
+          - id: "C12345678"
+            name: "#support"
+            mode: mention
 
 # Session per conversation
 session:
@@ -476,31 +489,52 @@ schedules:
 
 ## Chat Integration
 
-### Discord Bot Architecture
+### Per-Agent Bot Architecture
+
+Each agent with chat enabled has its own Discord/Slack bot. This means agents appear as distinct "colleagues" in chat platforms - each with their own name, avatar, and online presence.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Discord Gateway                           │
-│                   (discord.js bot)                           │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       │ Messages
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Message Router                             │
+│                    Discord Server                            │
 │                                                              │
-│  • Check if bot mentioned (group) or DM                     │
-│  • Route to appropriate agent based on channel config       │
-│  • Maintain channel → session ID mapping                    │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-        ┌──────────────┼──────────────┐
-        ▼              ▼              ▼
-   ┌─────────┐   ┌─────────┐   ┌─────────┐
-   │ Agent A │   │ Agent B │   │ Agent C │
-   │Session 1│   │Session 2│   │Session 3│
-   └─────────┘   └─────────┘   └─────────┘
+│  Members:                                                    │
+│  ├─ @alice (human)                                          │
+│  ├─ @bob (human)                                            │
+│  ├─ @bragdoc-support (bot) ← Agent: support                 │
+│  ├─ @bragdoc-marketer (bot) ← Agent: marketer               │
+│  └─ @turtle-writer (bot) ← Agent: turtle-content            │
+│                                                              │
+│  Each bot has its own avatar, status, and presence          │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                       FleetManager                           │
+│                                                              │
+│  ┌─────────────────────┐  ┌─────────────────────┐          │
+│  │   Agent: support    │  │   Agent: marketer   │          │
+│  │                     │  │                     │          │
+│  │  ┌───────────────┐  │  │  ┌───────────────┐  │          │
+│  │  │ Discord Bot   │  │  │  │ Discord Bot   │  │          │
+│  │  │ (own token)   │  │  │  │ (own token)   │  │          │
+│  │  └───────────────┘  │  │  └───────────────┘  │          │
+│  │                     │  │                     │          │
+│  │  ┌───────────────┐  │  │  ┌───────────────┐  │          │
+│  │  │ Slack App     │  │  │  │ Slack App     │  │          │
+│  │  │ (own token)   │  │  │  │ (own token)   │  │          │
+│  │  └───────────────┘  │  │  └───────────────┘  │          │
+│  │                     │  │                     │          │
+│  │  SessionManager     │  │  SessionManager     │          │
+│  └─────────────────────┘  └─────────────────────┘          │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+**Why per-agent bots?**
+- Each agent is a distinct "person" with its own identity
+- Users interact naturally: `@bragdoc-support help me with...`
+- No routing complexity - each bot handles its own messages
+- Clear separation of concerns and permissions
+
+**Setup requirement**: Each chat-enabled agent needs its own Discord Application (created in Discord Developer Portal) and/or Slack App (created in Slack API). This is manual setup but enables the best user experience.
 
 ### Chat Behavior
 

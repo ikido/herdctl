@@ -208,7 +208,7 @@ schedules:
 
 ### The Support Agent
 
-Responds to chat messages:
+Responds to chat messages. Each chat-enabled agent has its own Discord bot, appearing as a distinct "colleague" in chat:
 
 ```yaml
 name: project-support
@@ -218,9 +218,15 @@ repo: owner/my-project
 
 chat:
   discord:
-    channels:
-      - id: "123456789"
-        mode: mention  # Responds when @mentioned
+    bot_token_env: SUPPORT_DISCORD_TOKEN  # This agent's own bot
+    guilds:
+      - id: "guild-id-here"
+        channels:
+          - id: "123456789"
+            mode: mention  # Responds when @mentioned
+        dm:
+          enabled: true
+          mode: auto
 
 session:
   mode: per_channel  # Separate context per channel

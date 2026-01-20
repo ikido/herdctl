@@ -447,23 +447,61 @@ Each MCP server is a named entry with these fields:
 
 ### chat
 
-Configure chat integrations for the agent.
+Configure chat integrations for the agent. Each chat-enabled agent has its own bot - appearing as a distinct "person" in Discord/Slack with its own name, avatar, and presence.
 
 ```yaml
 chat:
   discord:
-    channel_ids:
-      - "1234567890"
-      - "0987654321"
-    respond_to_mentions: true
+    bot_token_env: SUPPORT_DISCORD_TOKEN
+    guilds:
+      - id: "123456789012345678"
+        channels:
+          - id: "987654321098765432"
+            name: "#support"
+            mode: mention
+        dm:
+          enabled: true
+          mode: auto
+
+  slack:
+    bot_token_env: SUPPORT_SLACK_TOKEN
+    app_token_env: SUPPORT_SLACK_APP_TOKEN
+    workspaces:
+      - id: "T12345678"
+        channels:
+          - id: "C12345678"
+            mode: mention
 ```
 
 #### Discord Settings
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `channel_ids` | string[] | — | Discord channel IDs to monitor |
-| `respond_to_mentions` | boolean | `true` | Respond when @mentioned |
+| `bot_token_env` | string | — | **Required.** Environment variable name containing this agent's Discord bot token |
+| `guilds` | array | — | Discord servers (guilds) this bot participates in |
+| `guilds[].id` | string | — | Discord guild ID |
+| `guilds[].channels` | array | — | Channels to monitor in this guild |
+| `guilds[].channels[].id` | string | — | Discord channel ID |
+| `guilds[].channels[].name` | string | — | Human-readable name (for documentation) |
+| `guilds[].channels[].mode` | string | `mention` | `mention` (respond when @mentioned) or `auto` (respond to all) |
+| `guilds[].dm.enabled` | boolean | `true` | Allow direct messages |
+| `guilds[].dm.mode` | string | `auto` | DM response mode |
+
+#### Slack Settings
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `bot_token_env` | string | — | **Required.** Environment variable name for Slack bot token |
+| `app_token_env` | string | — | **Required for Socket Mode.** Environment variable name for Slack app token |
+| `workspaces` | array | — | Slack workspaces this bot participates in |
+| `workspaces[].id` | string | — | Slack workspace ID (e.g., `T12345678`) |
+| `workspaces[].channels` | array | — | Channels to monitor |
+| `workspaces[].channels[].id` | string | — | Slack channel ID (e.g., `C12345678`) |
+| `workspaces[].channels[].mode` | string | `mention` | Response mode |
+
+:::note[Bot Setup Required]
+Each chat-enabled agent needs its own Discord Application (created in [Discord Developer Portal](https://discord.com/developers/applications)) and/or Slack App (created in [Slack API](https://api.slack.com/apps)). See the integration guides for setup instructions.
+:::
 
 ### docker
 
@@ -657,9 +695,13 @@ permissions:
 
 chat:
   discord:
-    channel_ids:
-      - "marketing-channel-id"
-    respond_to_mentions: true
+    bot_token_env: MARKETER_DISCORD_TOKEN
+    guilds:
+      - id: "123456789012345678"
+        channels:
+          - id: "marketing-channel-id"
+            name: "#marketing"
+            mode: mention
 ```
 
 ### Support Agent
@@ -725,10 +767,19 @@ mcp_servers:
 
 chat:
   discord:
-    channel_ids:
-      - "support-general"
-      - "support-billing"
-    respond_to_mentions: true
+    bot_token_env: SUPPORT_DISCORD_TOKEN
+    guilds:
+      - id: "123456789012345678"
+        channels:
+          - id: "support-general-id"
+            name: "#support-general"
+            mode: mention
+          - id: "support-billing-id"
+            name: "#support-billing"
+            mode: mention
+        dm:
+          enabled: true
+          mode: auto
 ```
 
 ---

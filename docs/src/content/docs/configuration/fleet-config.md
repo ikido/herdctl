@@ -425,52 +425,9 @@ agents:
 
 ---
 
-### chat
-
-| Property | Value |
-|----------|-------|
-| **Type** | `object` |
-| **Default** | `undefined` |
-| **Required** | No |
-
-Chat integration configuration.
-
-#### chat.discord
-
-| Property | Value |
-|----------|-------|
-| **Type** | `object` |
-| **Default** | `undefined` |
-| **Required** | No |
-
-Discord bot integration settings.
-
-##### chat.discord.enabled
-
-| Property | Value |
-|----------|-------|
-| **Type** | `boolean` |
-| **Default** | `false` |
-| **Required** | No |
-
-Enable Discord integration for the fleet.
-
-##### chat.discord.token_env
-
-| Property | Value |
-|----------|-------|
-| **Type** | `string` |
-| **Default** | `undefined` |
-| **Required** | No |
-
-Name of the environment variable containing the Discord bot token.
-
-```yaml
-chat:
-  discord:
-    enabled: true
-    token_env: DISCORD_BOT_TOKEN
-```
+:::note[Chat Configuration]
+Chat integrations (Discord, Slack) are configured **per-agent**, not at fleet level. Each chat-enabled agent has its own bot with its own token. See [Agent Configuration](/configuration/agent-config#chat) for details.
+:::
 
 ---
 
@@ -619,10 +576,8 @@ agents:
   - path: ./agents/reviewer.yaml
   - path: ./agents/docs-writer.yaml
 
-chat:
-  discord:
-    enabled: true
-    token_env: DISCORD_BOT_TOKEN
+# Note: Chat (Discord/Slack) is configured per-agent, not here.
+# See agent config files for chat integration settings.
 
 webhooks:
   enabled: true

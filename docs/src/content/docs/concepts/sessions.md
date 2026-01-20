@@ -129,6 +129,8 @@ Slack #dev        → Session C (separate context)
 
 **Example configuration:**
 
+Each chat-enabled agent has its own Discord bot (created in Discord Developer Portal), appearing as a distinct "person" in chat.
+
 ```yaml
 name: project-support
 description: "Answers questions in Discord channels"
@@ -137,11 +139,14 @@ repo: owner/my-project
 
 chat:
   discord:
-    channels:
-      - id: "123456789"       # #general
-        mode: mention
-      - id: "987654321"       # #support
-        mode: all
+    bot_token_env: SUPPORT_DISCORD_TOKEN  # This agent's own bot
+    guilds:
+      - id: "guild-id-here"
+        channels:
+          - id: "123456789"       # #general
+            mode: mention
+          - id: "987654321"       # #support
+            mode: auto
 
 session:
   mode: per_channel           # Separate context per channel
@@ -303,7 +308,7 @@ session:
 
 ### Multi-Channel Support Bot
 
-For a support agent handling multiple chat channels:
+For a support agent handling multiple chat channels (each agent has its own Discord bot):
 
 ```yaml
 name: support-bot
@@ -313,11 +318,14 @@ repo: owner/my-project
 
 chat:
   discord:
-    channels:
-      - id: "111222333"
-        mode: mention
-      - id: "444555666"
-        mode: all
+    bot_token_env: SUPPORT_DISCORD_TOKEN  # This agent's own bot
+    guilds:
+      - id: "guild-id-here"
+        channels:
+          - id: "111222333"
+            mode: mention
+          - id: "444555666"
+            mode: auto
 
 session:
   mode: per_channel          # Isolated context per channel

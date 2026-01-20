@@ -216,11 +216,8 @@ mcp:
       env:
         LINEAR_API_KEY: ${LINEAR_API_KEY}
 
-# Chat integrations reference env vars by name
-chat:
-  discord:
-    enabled: true
-    token_env: DISCORD_BOT_TOKEN  # Name of the env var, not the value
+# Chat integrations are per-agent (each agent has its own bot)
+# See agent config for chat settings
 ```
 
 ### URLs and Endpoints
@@ -280,8 +277,9 @@ While herdctl doesn't require specific environment variables, these are commonly
 | `ANTHROPIC_API_KEY` | Claude API key for agent sessions | `sk-ant-...` |
 | `GITHUB_TOKEN` | GitHub API token for MCP server | `ghp_...` |
 | `LINEAR_API_KEY` | Linear API key for issue tracking | `lin_api_...` |
-| `DISCORD_BOT_TOKEN` | Discord bot token for chat integration | — |
-| `SLACK_BOT_TOKEN` | Slack bot token for chat integration | — |
+| `<AGENT>_DISCORD_TOKEN` | Per-agent Discord bot token (e.g., `SUPPORT_DISCORD_TOKEN`) | — |
+| `<AGENT>_SLACK_TOKEN` | Per-agent Slack bot token (e.g., `SUPPORT_SLACK_TOKEN`) | — |
+| `<AGENT>_SLACK_APP_TOKEN` | Per-agent Slack app token for Socket Mode | — |
 
 ---
 
@@ -326,10 +324,8 @@ mcp:
       env:
         ALLOWED_PATHS: ${ALLOWED_PATHS:-/tmp}
 
-chat:
-  discord:
-    enabled: ${DISCORD_ENABLED:-false}
-    token_env: DISCORD_BOT_TOKEN
+# Note: Chat (Discord/Slack) is configured per-agent, not at fleet level.
+# Each agent references its own token env var in its config.
 
 webhooks:
   enabled: true
