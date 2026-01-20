@@ -646,6 +646,98 @@ describe("JobManager", () => {
       // Should not crash, just return no messages
       expect(messages.length).toBe(0);
     });
+
+    it("logs warning for malformed JSON in output file", async () => {
+      const warnMessages: string[] = [];
+      const manager = new JobManager({
+        jobsDir,
+        logger: {
+          warn: (msg) => warnMessages.push(msg),
+          debug: vi.fn(),
+        },
+      });
+
+      const created = await createTestJob({
+        agent: "test-agent",
+        status: "completed",
+      });
+
+      // Write invalid JSON directly to output file (correct path format)
+      const outputPath = join(jobsDir, `${created.id}.jsonl`);
+      await writeFile(
+        outputPath,
+        'not valid json\n{"type": "assistant", "content": "valid"}\n'
+      );
+
+      const messages: unknown[] = [];
+      const stream = await manager.streamJobOutput(created.id);
+
+      stream.on("message", (msg) => {
+        messages.push(msg);
+      });
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      stream.stop();
+
+      // Should have logged a warning about malformed JSON
+      expect(warnMessages.some((m) => m.includes("malformed JSON"))).toBe(true);
+      // Should still have parsed the valid message
+      expect(messages.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("emits end when polling detects job completion", async () => {
+      const manager = new JobManager({ jobsDir });
+
+      // Create a running job
+      const created = await createTestJob({
+        agent: "test-agent",
+        status: "running",
+      });
+
+      const stream = await manager.streamJobOutput(created.id);
+      let endReceived = false;
+
+      stream.on("end", () => {
+        endReceived = true;
+      });
+
+      // Complete the job while streaming
+      await updateJob(jobsDir, created.id, {
+        status: "completed",
+        finished_at: new Date().toISOString(),
+        exit_reason: "success",
+      });
+
+      // Wait for polling to detect completion (poll interval is 1000ms)
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      stream.stop();
+
+      expect(endReceived).toBe(true);
+    });
+
+    it("handles stream stop during polling", async () => {
+      const manager = new JobManager({ jobsDir });
+
+      // Create a running job
+      const created = await createTestJob({
+        agent: "test-agent",
+        status: "running",
+      });
+
+      const stream = await manager.streamJobOutput(created.id);
+
+      // Immediately stop the stream
+      stream.stop();
+
+      // Wait to ensure polling would have run
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // Should not crash
+      expect(true).toBe(true);
+    });
   });
 
   describe("applyRetention() edge cases", () => {
@@ -704,6 +796,37 @@ describe("JobManager", () => {
       // Old job and its output should be deleted
       const result = await manager.getJobs();
       expect(result.total).toBe(1);
+    });
+
+    it("logs warning when delete output file fails (non-ENOENT)", async () => {
+      const warnMessages: string[] = [];
+      const manager = new JobManager({
+        jobsDir,
+        retention: { maxJobsPerAgent: 1 },
+        logger: {
+          warn: (msg) => warnMessages.push(msg),
+          debug: vi.fn(),
+        },
+      });
+
+      // Create two jobs so one will be deleted
+      const job1 = await createTestJob({
+        agent: "agent-1",
+        status: "completed",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await createTestJob({ agent: "agent-1", status: "completed" });
+
+      // Make the output path a directory so unlink will fail with EISDIR
+      // (correct path format without .output.)
+      const outputDir = join(jobsDir, `${job1.id}.jsonl`);
+      await mkdir(outputDir, { recursive: true });
+
+      // Apply retention
+      await manager.applyRetention();
+
+      // Should have logged a warning about failing to delete output file
+      expect(warnMessages.some((m) => m.includes("Failed to delete output file"))).toBe(true);
     });
   });
 

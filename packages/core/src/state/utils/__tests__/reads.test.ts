@@ -7,6 +7,8 @@ import {
   safeReadJsonl,
   readYaml,
   readJsonl,
+  safeReadJson,
+  readJson,
   SafeReadError,
 } from "../reads.js";
 import { atomicWriteYaml, appendJsonl } from "../atomic.js";
@@ -737,6 +739,240 @@ describe("concurrent read safety", () => {
       expect(finalResult.data?.version).toBeGreaterThanOrEqual(0);
       expect(finalResult.data?.version).toBeLessThanOrEqual(10);
     }
+  });
+});
+
+describe("safeReadJson", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("reads and parses valid JSON file", async () => {
+    const filePath = join(tempDir, "config.json");
+    await writeFile(filePath, JSON.stringify({ name: "test", version: 1 }), "utf-8");
+
+    const result = await safeReadJson<{ name: string; version: number }>(filePath);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ name: "test", version: 1 });
+    }
+  });
+
+  it("handles complex nested JSON structures", async () => {
+    const filePath = join(tempDir, "complex.json");
+    const data = {
+      fleet: {
+        name: "my-fleet",
+        agents: [
+          { name: "agent1", model: "claude-sonnet" },
+          { name: "agent2", model: "claude-opus" },
+        ],
+        settings: { timeout: 30, retries: 3 },
+      },
+    };
+    await writeFile(filePath, JSON.stringify(data), "utf-8");
+
+    const result = await safeReadJson(filePath);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual(data);
+    }
+  });
+
+  it("handles empty file by returning null", async () => {
+    const filePath = join(tempDir, "empty.json");
+    await writeFile(filePath, "", "utf-8");
+
+    const result = await safeReadJson(filePath);
+
+    // Empty file returns success with null data
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toBeNull();
+    }
+  });
+
+  it("returns error for non-existent file", async () => {
+    const filePath = join(tempDir, "nonexistent.json");
+
+    const result = await safeReadJson(filePath);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBeInstanceOf(SafeReadError);
+      expect(result.error.code).toBe("ENOENT");
+    }
+  });
+
+  it("returns error for invalid JSON syntax", async () => {
+    const filePath = join(tempDir, "invalid.json");
+    await writeFile(filePath, "{ invalid json", "utf-8");
+
+    const result = await safeReadJson(filePath);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBeInstanceOf(SafeReadError);
+    }
+  });
+
+  it("handles JSON with unicode characters", async () => {
+    const filePath = join(tempDir, "unicode.json");
+    await writeFile(filePath, JSON.stringify({ greeting: "你好世界", emoji: "🚀" }), "utf-8");
+
+    const result = await safeReadJson<{ greeting: string; emoji: string }>(filePath);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ greeting: "你好世界", emoji: "🚀" });
+    }
+  });
+
+  it("handles JSON with null values", async () => {
+    const filePath = join(tempDir, "nullable.json");
+    await writeFile(filePath, JSON.stringify({ present: "value", absent: null }), "utf-8");
+
+    const result = await safeReadJson(filePath);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ present: "value", absent: null });
+    }
+  });
+
+  it("handles JSON arrays", async () => {
+    const filePath = join(tempDir, "array.json");
+    await writeFile(filePath, JSON.stringify([1, 2, 3, "four"]), "utf-8");
+
+    const result = await safeReadJson<(number | string)[]>(filePath);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual([1, 2, 3, "four"]);
+    }
+  });
+
+  it("returns error for invalid JSON", async () => {
+    const filePath = join(tempDir, "invalid-json.json");
+    await writeFile(filePath, '{"key": invalid}', "utf-8");
+
+    // Use maxRetries 0 to not test retry behavior (covered by YAML tests)
+    const result = await safeReadJson("/fake/path.json", {
+      readFn: async () => '{"key": invalid}',
+      maxRetries: 0,
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBeInstanceOf(SafeReadError);
+    }
+  });
+
+  it("does not retry on ENOENT error", async () => {
+    let readCount = 0;
+
+    const mockReadFn = async () => {
+      readCount++;
+      const error = new Error("File not found") as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      throw error;
+    };
+
+    const result = await safeReadJson("/fake/path.json", {
+      readFn: mockReadFn,
+      maxRetries: 5,
+      baseDelayMs: 1,
+    });
+
+    expect(result.success).toBe(false);
+    expect(readCount).toBe(1);
+  });
+
+  it("does not retry on EACCES error", async () => {
+    let readCount = 0;
+
+    const mockReadFn = async () => {
+      readCount++;
+      const error = new Error("Permission denied") as NodeJS.ErrnoException;
+      error.code = "EACCES";
+      throw error;
+    };
+
+    const result = await safeReadJson("/fake/path.json", {
+      readFn: mockReadFn,
+      maxRetries: 5,
+      baseDelayMs: 1,
+    });
+
+    expect(result.success).toBe(false);
+    expect(readCount).toBe(1);
+  });
+
+  it("does not retry on EPERM error", async () => {
+    let readCount = 0;
+
+    const mockReadFn = async () => {
+      readCount++;
+      const error = new Error("Operation not permitted") as NodeJS.ErrnoException;
+      error.code = "EPERM";
+      throw error;
+    };
+
+    const result = await safeReadJson("/fake/path.json", {
+      readFn: mockReadFn,
+      maxRetries: 5,
+      baseDelayMs: 1,
+    });
+
+    expect(result.success).toBe(false);
+    expect(readCount).toBe(1);
+  });
+
+  it("handles file with whitespace by returning null", async () => {
+    const filePath = join(tempDir, "whitespace.json");
+    await writeFile(filePath, "   \n  \n   ", "utf-8");
+
+    const result = await safeReadJson(filePath);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toBeNull();
+    }
+  });
+});
+
+describe("readJson (throwing variant)", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns parsed data on success", async () => {
+    const filePath = join(tempDir, "config.json");
+    await writeFile(filePath, JSON.stringify({ name: "test" }), "utf-8");
+
+    const data = await readJson<{ name: string }>(filePath);
+
+    expect(data).toEqual({ name: "test" });
+  });
+
+  it("throws SafeReadError on failure", async () => {
+    const filePath = join(tempDir, "nonexistent.json");
+
+    await expect(readJson(filePath)).rejects.toThrow(SafeReadError);
   });
 });
 

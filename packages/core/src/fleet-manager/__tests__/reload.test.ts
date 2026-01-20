@@ -26,8 +26,10 @@ describe("Configuration Hot Reload (US-9)", () => {
   });
 
   afterEach(async () => {
+    // Small delay to allow any background operations to complete
+    await new Promise((resolve) => setTimeout(resolve, 50));
     // Cleanup
-    await rm(tempDir, { recursive: true, force: true });
+    await rm(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   });
 
   // Helper to create a test config file

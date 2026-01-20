@@ -26,8 +26,8 @@ describe("Fleet Status Query Methods", () => {
   });
 
   afterEach(async () => {
-    // Cleanup
-    await rm(tempDir, { recursive: true, force: true });
+    // Cleanup with retry to handle race conditions from async operations
+    await rm(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   });
 
   // Helper to create a test config file

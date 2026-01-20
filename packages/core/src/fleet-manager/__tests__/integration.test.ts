@@ -1150,5 +1150,60 @@ describe("FleetManager Integration Tests (US-13)", () => {
         expect(new Set(jobIds).size).toBe(3); // All unique IDs
       });
     });
+
+    describe("stop with cancelOnTimeout", () => {
+      it("stops with cancelOnTimeout option", async () => {
+        await createAgentConfig("cancel-agent", {
+          name: "cancel-agent",
+        });
+
+        const configPath = await createConfig({
+          version: 1,
+          agents: [{ path: "./agents/cancel-agent.yaml" }],
+        });
+
+        const manager = createTestManager(configPath);
+        await manager.initialize();
+        await manager.start();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Stop with cancelOnTimeout enabled (doesn't matter here since no running jobs)
+        await manager.stop({
+          timeout: 100,
+          cancelOnTimeout: true,
+          cancelTimeout: 50,
+        });
+
+        expect(manager.state.status).toBe("stopped");
+      });
+    });
+
+    describe("error state handling", () => {
+      it("tracks errors during initialization", async () => {
+        // Create invalid config with missing agent file
+        const configPath = await createConfig({
+          version: 1,
+          agents: [{ path: "./agents/nonexistent.yaml" }],
+        });
+
+        const logger = createSilentLogger();
+        const manager = new FleetManager({
+          configPath,
+          stateDir,
+          logger,
+        });
+
+        // Initialize should fail
+        try {
+          await manager.initialize();
+        } catch {
+          // Expected
+        }
+
+        // Status should be error
+        expect(manager.state.status).toBe("error");
+        expect(manager.state.lastError).toBeDefined();
+      });
+    });
   });
 });
