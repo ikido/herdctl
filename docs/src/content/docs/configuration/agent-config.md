@@ -1,0 +1,650 @@
+---
+title: Agent Configuration
+description: Complete reference for agent YAML configuration
+---
+
+Each agent is defined by a YAML file that specifies its identity, behavior, schedule, permissions, and integrations. This page documents the complete agent configuration schema.
+
+## Quick Example
+
+```yaml
+name: my-coder
+description: "Implements features from GitHub issues"
+
+workspace: my-project
+repo: myorg/my-project
+
+identity:
+  name: "Code Bot"
+  role: "Software Engineer"
+  personality: "Methodical and thorough"
+
+system_prompt: |
+  You are a senior software engineer. Write clean, tested code.
+
+work_source:
+  type: github
+  labels:
+    ready: "ready"
+    in_progress: "in-progress"
+
+schedules:
+  check-issues:
+    type: interval
+    interval: 5m
+    prompt: "Check for ready issues and work on the oldest one."
+
+session:
+  max_turns: 50
+  timeout: 2h
+  model: claude-sonnet-4-20250514
+
+permissions:
+  mode: acceptEdits
+  allowed_tools:
+    - Read
+    - Write
+    - Edit
+    - Bash
+
+mcp_servers:
+  github:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+
+model: claude-sonnet-4-20250514
+max_turns: 100
+permission_mode: acceptEdits
+```
+
+## Complete Schema Reference
+
+### Top-Level Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | **Yes** | Unique identifier for the agent |
+| `description` | string | No | Human-readable description |
+| `workspace` | string \| object | No | Directory name or workspace config |
+| `repo` | string | No | GitHub repository (e.g., `owner/repo`) |
+| `identity` | object | No | Agent identity configuration |
+| `system_prompt` | string | No | Custom system instructions for Claude |
+| `work_source` | object | No | Where the agent gets tasks |
+| `schedules` | object | No | Map of named schedule configurations |
+| `session` | object | No | Session runtime settings |
+| `permissions` | object | No | Permission controls |
+| `mcp_servers` | object | No | MCP server configurations |
+| `chat` | object | No | Chat integration settings |
+| `docker` | object | No | Docker execution settings |
+| `model` | string | No | Claude model to use |
+| `max_turns` | integer | No | Maximum conversation turns |
+| `permission_mode` | string | No | Quick permission mode setting |
+
+---
+
+## Field Details
+
+### name (required)
+
+The unique identifier for this agent. Used in CLI commands and logging.
+
+```yaml
+name: bragdoc-coder
+```
+
+### description
+
+Human-readable description of what this agent does.
+
+```yaml
+description: "Implements features and fixes bugs for the bragdoc project"
+```
+
+### workspace
+
+Where the agent operates. Can be a simple string (directory name) or a full configuration object.
+
+**Simple form:**
+
+```yaml
+workspace: my-project
+```
+
+**Full form:**
+
+```yaml
+workspace:
+  root: /path/to/workspace
+  auto_clone: true
+  clone_depth: 1
+  default_branch: main
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `root` | string | — | Absolute path to workspace root |
+| `auto_clone` | boolean | `true` | Auto-clone repo if missing |
+| `clone_depth` | integer | `1` | Git clone depth |
+| `default_branch` | string | `"main"` | Default branch to use |
+
+### repo
+
+GitHub repository in `owner/repo` format. Used for cloning and work source integration.
+
+```yaml
+repo: edspencer/bragdoc-ai
+```
+
+### identity
+
+Defines the agent's persona for Claude interactions.
+
+```yaml
+identity:
+  name: "Senior Developer"
+  role: "Backend Engineer"
+  personality: "Detail-oriented, writes comprehensive tests"
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Display name for the agent |
+| `role` | string | Job title or function |
+| `personality` | string | Personality traits and working style |
+
+### system_prompt
+
+Custom instructions prepended to Claude's system prompt.
+
+```yaml
+system_prompt: |
+  You are a senior software engineer specializing in TypeScript.
+  Always write tests for new code.
+  Follow the existing code style.
+```
+
+### work_source
+
+Defines where the agent gets tasks to work on.
+
+```yaml
+work_source:
+  type: github
+  labels:
+    ready: "ready-for-dev"
+    in_progress: "in-progress"
+  cleanup_in_progress: true
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Work source type. Currently: `"github"` |
+| `labels` | object | Label configuration for GitHub issues |
+| `labels.ready` | string | Label indicating an issue is ready for work |
+| `labels.in_progress` | string | Label to apply when work begins |
+| `cleanup_in_progress` | boolean | Remove in_progress label when complete |
+
+### schedules
+
+A map of named schedules that trigger agent execution. Each schedule has a unique key.
+
+```yaml
+schedules:
+  morning-standup:
+    type: cron
+    expression: "0 9 * * 1-5"
+    prompt: "Review open PRs and summarize status."
+
+  issue-check:
+    type: interval
+    interval: 10m
+    prompt: "Check for ready issues and work on the oldest one."
+    work_source:
+      type: github
+      labels:
+        ready: "ready"
+
+  on-demand:
+    type: webhook
+    prompt: "Process the incoming webhook payload."
+
+  support-chat:
+    type: chat
+    prompt: "You are a helpful support agent."
+```
+
+#### Schedule Types
+
+| Type | Description | Key Fields |
+|------|-------------|------------|
+| `interval` | Run at fixed intervals | `interval` (e.g., "5m", "1h") |
+| `cron` | Run on cron schedule | `expression` (cron syntax) |
+| `webhook` | Triggered by HTTP webhook | — |
+| `chat` | Triggered by chat messages | — |
+
+#### Schedule Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | **Required.** One of: `interval`, `cron`, `webhook`, `chat` |
+| `interval` | string | Interval duration (e.g., "5m", "1h", "30s") |
+| `expression` | string | Cron expression (e.g., "0 9 * * 1-5") |
+| `prompt` | string | Task prompt for this schedule |
+| `work_source` | object | Override work source for this schedule |
+
+### session
+
+Runtime settings for agent sessions.
+
+```yaml
+session:
+  max_turns: 50
+  timeout: 2h
+  model: claude-sonnet-4-20250514
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `max_turns` | integer | Maximum conversation turns per session |
+| `timeout` | string | Session timeout (e.g., "30m", "2h") |
+| `model` | string | Claude model for this session |
+
+### permissions
+
+Control what the agent can do. See [Permissions](/configuration/permissions/) for full details.
+
+```yaml
+permissions:
+  mode: acceptEdits
+  allowed_tools:
+    - Read
+    - Write
+    - Edit
+    - Bash
+    - Glob
+    - Grep
+  denied_tools:
+    - WebFetch
+  bash:
+    allowed_commands:
+      - "git *"
+      - "npm *"
+      - "pnpm *"
+    denied_patterns:
+      - "rm -rf *"
+      - "sudo *"
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mode` | string | Permission mode (see below) |
+| `allowed_tools` | string[] | Tools the agent can use |
+| `denied_tools` | string[] | Tools explicitly denied |
+| `bash` | object | Bash command restrictions |
+| `bash.allowed_commands` | string[] | Allowed bash patterns |
+| `bash.denied_patterns` | string[] | Denied bash patterns |
+
+#### Permission Modes
+
+| Mode | Description |
+|------|-------------|
+| `default` | Default Claude Code behavior |
+| `acceptEdits` | Auto-accept file edits (default) |
+| `bypassPermissions` | Skip permission prompts |
+| `plan` | Plan-only mode, no execution |
+
+### mcp_servers
+
+Configure MCP (Model Context Protocol) servers. See [MCP Servers](/configuration/mcp-servers/) for full details.
+
+```yaml
+mcp_servers:
+  github:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+
+  filesystem:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+
+  custom:
+    url: http://localhost:8080/mcp
+```
+
+Each MCP server is a named entry with these fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `command` | string | Executable command |
+| `args` | string[] | Command arguments |
+| `env` | object | Environment variables |
+| `url` | string | URL for HTTP-based MCP servers |
+
+### chat
+
+Configure chat integrations for the agent.
+
+```yaml
+chat:
+  discord:
+    channel_ids:
+      - "1234567890"
+      - "0987654321"
+    respond_to_mentions: true
+```
+
+#### Discord Settings
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `channel_ids` | string[] | — | Discord channel IDs to monitor |
+| `respond_to_mentions` | boolean | `true` | Respond when @mentioned |
+
+### docker
+
+Run the agent in a Docker container.
+
+```yaml
+docker:
+  enabled: true
+  base_image: node:20-slim
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable Docker execution |
+| `base_image` | string | — | Docker image to use |
+
+### model
+
+Override the Claude model for this agent.
+
+```yaml
+model: claude-sonnet-4-20250514
+```
+
+Common models:
+- `claude-sonnet-4-20250514` — Fast, capable (recommended)
+- `claude-opus-4-20250514` — Most capable
+
+### max_turns
+
+Maximum number of conversation turns per session.
+
+```yaml
+max_turns: 100
+```
+
+### permission_mode
+
+Shorthand for `permissions.mode`. Sets the permission mode directly.
+
+```yaml
+permission_mode: acceptEdits
+```
+
+---
+
+## Complete Examples
+
+### Coder Agent
+
+A development agent that processes GitHub issues:
+
+```yaml
+name: project-coder
+description: "Senior developer that implements features and fixes bugs"
+
+workspace: my-project
+repo: myorg/my-project
+
+identity:
+  name: "Dev Bot"
+  role: "Senior Software Engineer"
+  personality: "Methodical, writes clean code with tests"
+
+system_prompt: |
+  You are a senior software engineer working on this project.
+
+  Guidelines:
+  - Write TypeScript with strict types
+  - Include unit tests for new code
+  - Follow existing code patterns
+  - Create atomic commits with clear messages
+
+work_source:
+  type: github
+  labels:
+    ready: "ready-for-dev"
+    in_progress: "in-progress"
+  cleanup_in_progress: true
+
+schedules:
+  continuous:
+    type: interval
+    interval: 5m
+    prompt: |
+      Check for GitHub issues labeled "ready-for-dev".
+      If found, implement the oldest issue:
+      1. Create a feature branch
+      2. Implement the solution
+      3. Write tests
+      4. Create a PR
+
+session:
+  max_turns: 100
+  timeout: 4h
+  model: claude-sonnet-4-20250514
+
+permissions:
+  mode: acceptEdits
+  allowed_tools:
+    - Read
+    - Write
+    - Edit
+    - Bash
+    - Glob
+    - Grep
+    - Task
+  bash:
+    allowed_commands:
+      - "git *"
+      - "npm *"
+      - "pnpm *"
+      - "node *"
+      - "npx *"
+    denied_patterns:
+      - "rm -rf /"
+      - "sudo *"
+
+mcp_servers:
+  github:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+
+docker:
+  enabled: false
+```
+
+### Marketer Agent
+
+A content creation agent for marketing tasks:
+
+```yaml
+name: content-marketer
+description: "Creates blog posts, social content, and marketing copy"
+
+identity:
+  name: "Marketing Assistant"
+  role: "Content Strategist"
+  personality: "Creative, engaging, brand-aware"
+
+system_prompt: |
+  You are a content marketing specialist.
+
+  Your responsibilities:
+  - Write engaging blog posts
+  - Create social media content
+  - Maintain consistent brand voice
+  - Optimize content for SEO
+
+work_source:
+  type: github
+  labels:
+    ready: "content-ready"
+    in_progress: "writing"
+
+schedules:
+  content-check:
+    type: cron
+    expression: "0 8 * * 1-5"
+    prompt: |
+      Check for content requests labeled "content-ready".
+      For each request:
+      1. Research the topic
+      2. Create an outline
+      3. Write the content
+      4. Submit for review
+
+  social-daily:
+    type: cron
+    expression: "0 10 * * *"
+    prompt: |
+      Review recent blog posts and create social media
+      snippets for Twitter and LinkedIn.
+
+session:
+  max_turns: 50
+  timeout: 2h
+
+permissions:
+  mode: acceptEdits
+  allowed_tools:
+    - Read
+    - Write
+    - Edit
+    - Glob
+    - Grep
+    - WebFetch
+    - WebSearch
+
+chat:
+  discord:
+    channel_ids:
+      - "marketing-channel-id"
+    respond_to_mentions: true
+```
+
+### Support Agent
+
+A customer support agent that handles inquiries:
+
+```yaml
+name: support-agent
+description: "Handles customer support inquiries via chat"
+
+identity:
+  name: "Support Bot"
+  role: "Customer Support Specialist"
+  personality: "Friendly, patient, solution-oriented"
+
+system_prompt: |
+  You are a customer support specialist.
+
+  Guidelines:
+  - Be helpful and empathetic
+  - Provide accurate information from the knowledge base
+  - Escalate complex issues to humans
+  - Never make up information
+
+schedules:
+  support-chat:
+    type: chat
+    prompt: |
+      You are monitoring support channels.
+      Help users with their questions about our product.
+      If you cannot help, escalate to a human.
+
+  ticket-review:
+    type: cron
+    expression: "0 9 * * 1-5"
+    prompt: |
+      Review open support tickets from yesterday.
+      Summarize common issues and trends.
+
+session:
+  max_turns: 200
+  timeout: 8h
+  model: claude-sonnet-4-20250514
+
+permissions:
+  mode: default
+  allowed_tools:
+    - Read
+    - Glob
+    - Grep
+    - WebFetch
+  denied_tools:
+    - Write
+    - Edit
+    - Bash
+
+mcp_servers:
+  knowledge-base:
+    command: node
+    args: ["./mcp-servers/knowledge-base.js"]
+    env:
+      KB_API_KEY: ${KB_API_KEY}
+
+chat:
+  discord:
+    channel_ids:
+      - "support-general"
+      - "support-billing"
+    respond_to_mentions: true
+```
+
+---
+
+## Inheritance
+
+Agents inherit default settings from the fleet configuration (`herdctl.yaml`). Agent-specific settings override fleet defaults.
+
+```yaml
+# herdctl.yaml
+defaults:
+  model: claude-sonnet-4-20250514
+  permission_mode: acceptEdits
+  session:
+    timeout: 2h
+```
+
+```yaml
+# agents/special-agent.yaml
+name: special-agent
+model: claude-opus-4-20250514  # Override default model
+session:
+  timeout: 4h  # Override default timeout
+```
+
+## Validation
+
+Validate agent configuration before running:
+
+```bash
+herdctl validate agents/my-agent.yaml
+```
+
+## Related Pages
+
+- [Fleet Configuration](/configuration/fleet-config/) — Global fleet settings
+- [Permissions](/configuration/permissions/) — Detailed permission controls
+- [MCP Servers](/configuration/mcp-servers/) — MCP server setup
+- [Schedules](/concepts/schedules/) — Schedule concepts
+- [Agents](/concepts/agents/) — Agent concepts

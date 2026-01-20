@@ -1,0 +1,104 @@
+---
+title: Getting Started
+description: Install herdctl and run your first agent fleet
+---
+
+import { Badge, Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<Badge text="Coming Soon" variant="caution" size="large" />
+
+This guide will walk you through installing herdctl and running your first autonomous agent fleet. Full documentation is in progress.
+
+## What You'll Learn
+
+<CardGrid>
+  <Card title="Installation" icon="laptop">
+    How to install herdctl via npm, verify your setup, and configure prerequisites like Claude Code CLI.
+  </Card>
+  <Card title="Creating Your First Agent" icon="add-document">
+    Define an agent in YAML with a name, workspace, schedule, and prompt. Understand the basic structure.
+  </Card>
+  <Card title="Running Your Fleet" icon="rocket">
+    Start the herdctl daemon, watch agents execute on schedule, and manage your fleet from the CLI.
+  </Card>
+  <Card title="Monitoring Output" icon="open-book">
+    View agent logs, track job status, and understand what your agents are doing in real-time.
+  </Card>
+</CardGrid>
+
+## Prerequisites
+
+Before you begin, you'll need:
+
+- **Node.js 18+** - herdctl is built on Node.js
+- **Claude Code CLI** - Agents use Claude Code under the hood
+- **Git** - For workspace management and repo cloning
+
+## Quick Preview
+
+Here's a taste of what running herdctl looks like:
+
+```bash
+# Install herdctl
+npm install -g herdctl
+
+# Initialize a new project
+herdctl init
+
+# Start your fleet
+herdctl start
+```
+
+And a simple agent configuration:
+
+```yaml
+# agents/my-agent.yaml
+name: my-first-agent
+description: "My first autonomous agent"
+
+workspace: my-project
+repo: username/my-project
+
+schedules:
+  - name: check-issues
+    trigger:
+      type: interval
+      every: 10m
+    prompt: |
+      Check for open issues and report status.
+```
+
+## Background Reading
+
+While this guide is being completed, explore these concepts to understand how herdctl works:
+
+<CardGrid>
+  <LinkCard
+    title="Agents"
+    description="Understand what agents are and how they operate autonomously"
+    href="/concepts/agents/"
+  />
+  <LinkCard
+    title="Schedules"
+    description="Learn how triggers determine when agents run"
+    href="/concepts/schedules/"
+  />
+  <LinkCard
+    title="Jobs"
+    description="Discover how individual agent executions are tracked"
+    href="/concepts/jobs/"
+  />
+  <LinkCard
+    title="Workspaces"
+    description="See how agents manage their working directories"
+    href="/concepts/workspaces/"
+  />
+</CardGrid>
+
+## Configuration Reference
+
+For detailed configuration options, see:
+
+- [Fleet Configuration](/configuration/fleet-config/) - Fleet-wide settings
+- [Agent Configuration](/configuration/agent-config/) - Per-agent options
+- [CLI Reference](/cli-reference/) - All available commands

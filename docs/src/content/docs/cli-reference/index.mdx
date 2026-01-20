@@ -1,0 +1,127 @@
+---
+title: CLI Reference
+description: Complete command reference for herdctl
+sidebar:
+  badge:
+    text: Coming Soon
+    variant: caution
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Coming Soon">
+This page is a placeholder. The herdctl CLI is currently under development. The commands listed below represent the planned functionality.
+</Aside>
+
+## Planned Commands
+
+The following commands are planned for the herdctl CLI:
+
+### Fleet Management
+
+| Command | Description |
+|---------|-------------|
+| `herdctl start [agent]` | Start all agents, or a specific agent |
+| `herdctl stop [agent]` | Stop all agents, or a specific agent |
+| `herdctl restart` | Restart all agents |
+| `herdctl status [agent]` | Show fleet status, or specific agent status |
+
+### Monitoring
+
+| Command | Description |
+|---------|-------------|
+| `herdctl logs [agent]` | View logs for all agents, or a specific agent |
+
+### Manual Operations
+
+| Command | Description |
+|---------|-------------|
+| `herdctl trigger <agent>` | Manually trigger an agent to run |
+
+### Configuration
+
+| Command | Description |
+|---------|-------------|
+| `herdctl config validate` | Validate configuration files |
+
+### Web UI
+
+| Command | Description |
+|---------|-------------|
+| `herdctl web` | Start the local monitoring dashboard |
+
+## Global Options (Planned)
+
+```bash
+herdctl [command] [options]
+
+Options:
+  -c, --config <path>    Path to config file (default: ./herdctl.yaml)
+  -v, --verbose          Enable verbose output
+  --json                 Output in JSON format
+  --help                 Show help
+  --version              Show version
+```
+
+## Additional Commands (Future)
+
+The following additional commands are planned for future releases:
+
+### Agent Commands
+
+```bash
+herdctl agent list                    # List all agents
+herdctl agent status <name>           # Show agent status
+herdctl agent start <name>            # Start specific agent
+herdctl agent stop <name>             # Stop specific agent
+herdctl agent logs <name>             # View agent logs
+herdctl agent resume <name>           # Resume agent session
+```
+
+### Job Commands
+
+```bash
+herdctl jobs list                     # List all jobs
+herdctl jobs list --agent <name>      # List jobs for agent
+herdctl jobs show <id>                # Show job details
+herdctl jobs logs <id>                # View job logs
+herdctl jobs cancel <id>              # Cancel running job
+herdctl jobs resume <id>              # Resume job session
+```
+
+### Workspace Commands
+
+```bash
+herdctl workspace list                # List workspaces
+herdctl workspace status <name>       # Show workspace status
+herdctl workspace clean <name>        # Reset workspace
+herdctl workspace remove <name>       # Remove workspace
+```
+
+### Configuration Commands
+
+```bash
+herdctl config show                   # Show current config
+herdctl init                          # Initialize new project
+```
+
+### Chat Integration
+
+```bash
+herdctl discord start                 # Start Discord bot
+herdctl discord status                # Show bot status
+```
+
+## Exit Codes (Planned)
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Configuration error |
+| 3 | Agent error |
+| 4 | Job error |
+
+## Environment Variables
+
+See [Environment Variables](/configuration/environment/) for configuration options.
