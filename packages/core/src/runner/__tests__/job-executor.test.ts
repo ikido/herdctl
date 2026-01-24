@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdir, rm, realpath, readdir } from "node:fs/promises";
+import { mkdir, rm, realpath, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { JobExecutor, executeJob, type SDKQueryFunction } from "../job-executor.js";
@@ -1704,5 +1704,252 @@ describe("error handling (US-7)", () => {
       expect(result.error?.message).toContain("SDK reported error");
       expect(result.errorDetails?.code).toBe("SDK_ERR");
     });
+  });
+});
+
+// =============================================================================
+// Output to file tests (US-9)
+// =============================================================================
+
+describe("outputToFile (US-9)", () => {
+  let tempDir: string;
+  let stateDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir();
+    stateDir = join(tempDir, ".herdctl");
+    await initStateDirectory({ path: stateDir });
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("creates job output directory when outputToFile is true", async () => {
+    const messages: SDKMessage[] = [
+      { type: "system", content: "Init" },
+      { type: "assistant", content: "Hello" },
+    ];
+
+    const executor = new JobExecutor(createMockSDKQuery(messages), {
+      logger: createMockLogger(),
+    });
+
+    const result = await executor.execute({
+      agent: createTestAgent(),
+      prompt: "Test prompt",
+      stateDir,
+      outputToFile: true,
+    });
+
+    // Verify directory was created
+    const jobOutputDir = join(stateDir, "jobs", result.jobId);
+    const dirStat = await stat(jobOutputDir);
+    expect(dirStat.isDirectory()).toBe(true);
+  });
+
+  it("writes output.log file when outputToFile is true", async () => {
+    const messages: SDKMessage[] = [
+      { type: "system", content: "Init" },
+      { type: "assistant", content: "Hello world" },
+    ];
+
+    const executor = new JobExecutor(createMockSDKQuery(messages), {
+      logger: createMockLogger(),
+    });
+
+    const result = await executor.execute({
+      agent: createTestAgent(),
+      prompt: "Test prompt",
+      stateDir,
+      outputToFile: true,
+    });
+
+    // Verify output.log file exists
+    const outputLogPath = join(stateDir, "jobs", result.jobId, "output.log");
+    const logContent = await readFile(outputLogPath, "utf-8");
+    expect(logContent).toContain("[SYSTEM] Init");
+    expect(logContent).toContain("[ASSISTANT] Hello world");
+  });
+
+  it("does not create job output directory when outputToFile is false", async () => {
+    const messages: SDKMessage[] = [
+      { type: "system", content: "Init" },
+      { type: "assistant", content: "Hello" },
+    ];
+
+    const executor = new JobExecutor(createMockSDKQuery(messages), {
+      logger: createMockLogger(),
+    });
+
+    const result = await executor.execute({
+      agent: createTestAgent(),
+      prompt: "Test prompt",
+      stateDir,
+      outputToFile: false,
+    });
+
+    // Verify directory was NOT created
+    const jobOutputDir = join(stateDir, "jobs", result.jobId);
+    try {
+      await stat(jobOutputDir);
+      expect.fail("Directory should not exist");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+
+  it("does not create job output directory when outputToFile is not specified", async () => {
+    const messages: SDKMessage[] = [
+      { type: "system", content: "Init" },
+      { type: "assistant", content: "Hello" },
+    ];
+
+    const executor = new JobExecutor(createMockSDKQuery(messages), {
+      logger: createMockLogger(),
+    });
+
+    const result = await executor.execute({
+      agent: createTestAgent(),
+      prompt: "Test prompt",
+      stateDir,
+      // outputToFile not specified (defaults to false)
+    });
+
+    // Verify directory was NOT created
+    const jobOutputDir = join(stateDir, "jobs", result.jobId);
+    try {
+      await stat(jobOutputDir);
+      expect.fail("Directory should not exist");
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
+    }
+  });
+
+  it("writes all message types to output.log", async () => {
+    const messages: SDKMessage[] = [
+      { type: "system", content: "System message" },
+      { type: "assistant", content: "Assistant response" },
+      { type: "tool_use", tool_name: "read_file", input: { path: "/etc/hosts" } },
+      { type: "tool_result", result: "localhost", success: true },
+      { type: "error", message: "An error occurred" },
+    ];
+
+    const executor = new JobExecutor(createMockSDKQuery(messages), {
+      logger: createMockLogger(),
+    });
+
+    const result = await executor.execute({
+      agent: createTestAgent(),
+      prompt: "Test prompt",
+      stateDir,
+      outputToFile: true,
+    });
+
+    const outputLogPath = join(stateDir, "jobs", result.jobId, "output.log");
+    const logContent = await readFile(outputLogPath, "utf-8");
+
+    expect(logContent).toContain("[SYSTEM] System message");
+    expect(logContent).toContain("[ASSISTANT] Assistant response");
+    expect(logContent).toContain("[TOOL] read_file");
+    expect(logContent).toContain("[TOOL_RESULT] (OK) localhost");
+    expect(logContent).toContain("[ERROR] An error occurred");
+  });
+
+  it("includes timestamps in output.log lines", async () => {
+    const messages: SDKMessage[] = [
+      { type: "assistant", content: "Hello" },
+    ];
+
+    const executor = new JobExecutor(createMockSDKQuery(messages), {
+      logger: createMockLogger(),
+    });
+
+    const result = await executor.execute({
+      agent: createTestAgent(),
+      prompt: "Test prompt",
+      stateDir,
+      outputToFile: true,
+    });
+
+    const outputLogPath = join(stateDir, "jobs", result.jobId, "output.log");
+    const logContent = await readFile(outputLogPath, "utf-8");
+
+    // Check for ISO timestamp format: [YYYY-MM-DDTHH:MM:SS.sssZ]
+    expect(logContent).toMatch(/\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\]/);
+  });
+
+  it("still writes to JSONL even when outputToFile is true", async () => {
+    const messages: SDKMessage[] = [
+      { type: "system", content: "Init" },
+      { type: "assistant", content: "Response" },
+    ];
+
+    const executor = new JobExecutor(createMockSDKQuery(messages), {
+      logger: createMockLogger(),
+    });
+
+    const result = await executor.execute({
+      agent: createTestAgent(),
+      prompt: "Test prompt",
+      stateDir,
+      outputToFile: true,
+    });
+
+    // Verify JSONL still exists
+    const output = await readJobOutputAll(join(stateDir, "jobs"), result.jobId);
+    expect(output).toHaveLength(2);
+    expect(output[0].type).toBe("system");
+    expect(output[1].type).toBe("assistant");
+  });
+
+  it("handles failed tool results in output.log", async () => {
+    const messages: SDKMessage[] = [
+      { type: "tool_result", result: "File not found", success: false },
+    ];
+
+    const executor = new JobExecutor(createMockSDKQuery(messages), {
+      logger: createMockLogger(),
+    });
+
+    const result = await executor.execute({
+      agent: createTestAgent(),
+      prompt: "Test prompt",
+      stateDir,
+      outputToFile: true,
+    });
+
+    const outputLogPath = join(stateDir, "jobs", result.jobId, "output.log");
+    const logContent = await readFile(outputLogPath, "utf-8");
+
+    expect(logContent).toContain("[TOOL_RESULT] (FAILED) File not found");
+  });
+
+  it("events still stream regardless of outputToFile setting", async () => {
+    const receivedMessages: SDKMessage[] = [];
+    const onMessage = vi.fn((msg: SDKMessage) => {
+      receivedMessages.push(msg);
+    });
+
+    const messages: SDKMessage[] = [
+      { type: "system", content: "Init" },
+      { type: "assistant", content: "Hello" },
+    ];
+
+    const executor = new JobExecutor(createMockSDKQuery(messages), {
+      logger: createMockLogger(),
+    });
+
+    await executor.execute({
+      agent: createTestAgent(),
+      prompt: "Test prompt",
+      stateDir,
+      outputToFile: true,
+      onMessage,
+    });
+
+    // Events should still be emitted
+    expect(onMessage).toHaveBeenCalledTimes(2);
+    expect(receivedMessages).toHaveLength(2);
   });
 });

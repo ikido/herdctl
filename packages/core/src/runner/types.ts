@@ -31,6 +31,8 @@ export interface RunnerOptions {
   fork?: string;
   /** Parent job ID when forking (used with fork option) */
   forkedFrom?: string;
+  /** When true, job output is also written to .herdctl/jobs/{jobId}/output.log (default: false) */
+  outputToFile?: boolean;
 }
 
 /**

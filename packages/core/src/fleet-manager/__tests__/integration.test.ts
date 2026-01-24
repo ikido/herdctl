@@ -22,6 +22,7 @@ import type {
   FleetManagerLogger,
   JobCreatedPayload,
   JobCompletedPayload,
+  JobFailedPayload,
   ScheduleTriggeredPayload,
 } from "../types.js";
 
@@ -340,6 +341,133 @@ describe("FleetManager Integration Tests (US-13)", () => {
       expect(scheduleTriggers.length).toBeGreaterThanOrEqual(1);
       expect(scheduleTriggers[0].agentName).toBe("scheduled-agent");
       expect(scheduleTriggers[0].scheduleName).toBe("frequent");
+    });
+
+    it("scheduler executes jobs via JobExecutor when sdkQuery is provided", async () => {
+      await createAgentConfig("executor-agent", {
+        name: "executor-agent",
+        schedules: {
+          quick: {
+            type: "interval",
+            interval: "100ms",
+            prompt: "Execute test prompt",
+          },
+        },
+      });
+
+      const configPath = await createConfig({
+        version: 1,
+        agents: [{ path: "./agents/executor-agent.yaml" }],
+      });
+
+      // Track events
+      const jobCreatedEvents: JobCreatedPayload[] = [];
+      const jobCompletedEvents: JobCompletedPayload[] = [];
+
+      // Mock SDK query function
+      const mockSdkQuery = async function* () {
+        yield {
+          type: "system" as const,
+          subtype: "init",
+          session_id: "test-session-123",
+        };
+        yield {
+          type: "assistant" as const,
+          content: "Test response from mock SDK",
+        };
+      };
+
+      const manager = new FleetManager({
+        configPath,
+        stateDir,
+        checkInterval: 50,
+        logger: createSilentLogger(),
+        sdkQuery: mockSdkQuery,
+      });
+
+      manager.on("job:created", (payload) => {
+        jobCreatedEvents.push(payload);
+      });
+
+      manager.on("job:completed", (payload) => {
+        jobCompletedEvents.push(payload);
+      });
+
+      await manager.initialize();
+      await manager.start();
+
+      // Wait for a scheduled trigger to complete execution
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      await manager.stop();
+
+      // Should have triggered at least once
+      expect(jobCreatedEvents.length).toBeGreaterThanOrEqual(1);
+      expect(jobCreatedEvents[0].agentName).toBe("executor-agent");
+      expect(jobCreatedEvents[0].scheduleName).toBe("quick");
+
+      // Should have completed at least one job
+      expect(jobCompletedEvents.length).toBeGreaterThanOrEqual(1);
+      expect(jobCompletedEvents[0].agentName).toBe("executor-agent");
+      expect(jobCompletedEvents[0].exitReason).toBe("success");
+      expect(jobCompletedEvents[0].durationSeconds).toBeGreaterThanOrEqual(0);
+    });
+
+    it("emits job:failed when execution fails", async () => {
+      await createAgentConfig("failing-agent", {
+        name: "failing-agent",
+        schedules: {
+          fail: {
+            type: "interval",
+            interval: "100ms",
+            prompt: "This will fail",
+          },
+        },
+      });
+
+      const configPath = await createConfig({
+        version: 1,
+        agents: [{ path: "./agents/failing-agent.yaml" }],
+      });
+
+      // Track events
+      const jobFailedEvents: { agentName: string; error: Error }[] = [];
+
+      // Mock SDK query function that throws
+      const mockSdkQuery = async function* () {
+        yield {
+          type: "error" as const,
+          message: "Simulated SDK error",
+          code: "SDK_ERROR",
+        };
+      };
+
+      const manager = new FleetManager({
+        configPath,
+        stateDir,
+        checkInterval: 50,
+        logger: createSilentLogger(),
+        sdkQuery: mockSdkQuery,
+      });
+
+      manager.on("job:failed", (payload) => {
+        jobFailedEvents.push({
+          agentName: payload.agentName,
+          error: payload.error,
+        });
+      });
+
+      await manager.initialize();
+      await manager.start();
+
+      // Wait for the schedule to trigger and fail
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      await manager.stop();
+
+      // Should have emitted at least one job:failed event
+      expect(jobFailedEvents.length).toBeGreaterThanOrEqual(1);
+      expect(jobFailedEvents[0].agentName).toBe("failing-agent");
     });
 
     it("scheduler respects disabled schedules", async () => {

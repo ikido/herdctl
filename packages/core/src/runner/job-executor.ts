@@ -8,6 +8,7 @@
  */
 
 import { join } from "node:path";
+import { mkdir, appendFile } from "node:fs/promises";
 import type {
   RunnerOptions,
   RunnerOptionsWithCallbacks,
@@ -131,7 +132,7 @@ export class JobExecutor {
    * @returns Result of the execution including job ID and status
    */
   async execute(options: RunnerOptionsWithCallbacks): Promise<RunnerResult> {
-    const { agent, prompt, stateDir, triggerType, schedule, onMessage } =
+    const { agent, prompt, stateDir, triggerType, schedule, onMessage, outputToFile } =
       options;
 
     const jobsDir = join(stateDir, "jobs");
@@ -141,6 +142,7 @@ export class JobExecutor {
     let lastError: RunnerError | undefined;
     let errorDetails: RunnerErrorDetails | undefined;
     let messagesReceived = 0;
+    let outputLogPath: string | undefined;
 
     // Determine trigger type: use 'fork' if forking, otherwise use provided or default to 'manual'
     const effectiveTriggerType: TriggerType = options.fork
@@ -163,7 +165,22 @@ export class JobExecutor {
       throw error;
     }
 
-    // Step 2: Update job status to 'running'
+    // Step 2: Setup output log file if outputToFile is enabled
+    if (outputToFile) {
+      try {
+        const jobOutputDir = join(jobsDir, job.id);
+        await mkdir(jobOutputDir, { recursive: true });
+        outputLogPath = join(jobOutputDir, "output.log");
+        this.logger.info?.(`Output logging enabled for job ${job.id} at ${outputLogPath}`);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to create job output directory: ${(error as Error).message}`
+        );
+        // Continue execution - output logging is optional
+      }
+    }
+
+    // Step 3: Update job status to 'running'
     try {
       await updateJob(jobsDir, job.id, {
         status: "running",
@@ -175,13 +192,13 @@ export class JobExecutor {
       // Continue execution - job was created
     }
 
-    // Step 3: Build SDK options
+    // Step 4: Build SDK options
     const sdkOptions = toSDKOptions(agent, {
       resume: options.resume,
       fork: options.fork ? true : undefined,
     });
 
-    // Step 4: Execute agent and stream output
+    // Step 5: Execute agent and stream output
     try {
       let messages: AsyncIterable<SDKMessage>;
 
@@ -242,6 +259,21 @@ export class JobExecutor {
             `Failed to write job output: ${(outputError as Error).message}`
           );
           // Continue processing - don't fail execution due to logging issues
+        }
+
+        // Also write to output.log file if outputToFile is enabled
+        if (outputLogPath) {
+          try {
+            const logLine = this.formatOutputLogLine(processed.output);
+            if (logLine) {
+              await appendFile(outputLogPath, logLine + "\n", "utf-8");
+            }
+          } catch (fileError) {
+            this.logger.warn(
+              `Failed to write to output log file: ${(fileError as Error).message}`
+            );
+            // Continue processing - file logging is optional
+          }
         }
 
         // Extract session ID if present
@@ -408,6 +440,69 @@ export class JobExecutor {
       errorDetails,
       durationSeconds,
     };
+  }
+
+  /**
+   * Format a job output message as a human-readable log line
+   *
+   * Converts the structured JobOutputInput to a simple text format for the output.log file.
+   *
+   * @param output - The job output message to format
+   * @returns Formatted log line, or null if message should not be logged
+   */
+  private formatOutputLogLine(output: {
+    type: string;
+    content?: string;
+    message?: string;
+    tool_name?: string;
+    input?: unknown;
+    result?: unknown;
+    success?: boolean;
+    [key: string]: unknown;
+  }): string | null {
+    const timestamp = new Date().toISOString();
+
+    switch (output.type) {
+      case "assistant":
+        if (output.content) {
+          return `[${timestamp}] [ASSISTANT] ${output.content}`;
+        }
+        break;
+
+      case "tool_use":
+        if (output.tool_name) {
+          const inputStr = output.input
+            ? ` ${JSON.stringify(output.input)}`
+            : "";
+          return `[${timestamp}] [TOOL] ${output.tool_name}${inputStr}`;
+        }
+        break;
+
+      case "tool_result":
+        if (output.result !== undefined) {
+          const resultStr =
+            typeof output.result === "string"
+              ? output.result
+              : JSON.stringify(output.result);
+          const status = output.success === false ? "FAILED" : "OK";
+          return `[${timestamp}] [TOOL_RESULT] (${status}) ${resultStr}`;
+        }
+        break;
+
+      case "system":
+        if (output.content || output.message) {
+          return `[${timestamp}] [SYSTEM] ${output.content ?? output.message}`;
+        }
+        break;
+
+      case "error":
+        if (output.message || output.content) {
+          return `[${timestamp}] [ERROR] ${output.message ?? output.content}`;
+        }
+        break;
+    }
+
+    return null;
   }
 }
 

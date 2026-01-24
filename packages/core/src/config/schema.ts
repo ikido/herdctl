@@ -215,6 +215,8 @@ export const ScheduleSchema = z.object({
   expression: z.string().optional(), // cron expression
   prompt: z.string().optional(),
   work_source: WorkSourceSchema.optional(),
+  /** When true, job output is also written to .herdctl/jobs/{jobId}/output.log (default: false) */
+  outputToFile: z.boolean().optional(),
 });
 
 // =============================================================================
