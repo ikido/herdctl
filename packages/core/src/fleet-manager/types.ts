@@ -145,56 +145,6 @@ export interface FleetManagerState {
 }
 
 // =============================================================================
-// Fleet Manager Events (Legacy - for backwards compatibility)
-// =============================================================================
-
-/**
- * Events emitted by the FleetManager
- *
- * @deprecated Use FleetManagerEventMap from ./event-types.js for strongly-typed events.
- * This interface is kept for backwards compatibility but may be removed in a future version.
- */
-export interface FleetManagerEvents {
-  /**
-   * Emitted when initialization completes successfully
-   */
-  initialized: [];
-
-  /**
-   * Emitted when the fleet manager starts running
-   */
-  started: [];
-
-  /**
-   * Emitted when the fleet manager stops
-   */
-  stopped: [];
-
-  /**
-   * Emitted when an error occurs
-   */
-  error: [error: Error];
-
-  /**
-   * Emitted when a schedule triggers an agent run
-   * @deprecated Use 'schedule:triggered' event instead
-   */
-  "schedule:trigger": [agentName: string, scheduleName: string];
-
-  /**
-   * Emitted when an agent run completes successfully
-   * @deprecated Use 'job:completed' event instead
-   */
-  "schedule:complete": [agentName: string, scheduleName: string];
-
-  /**
-   * Emitted when an agent run fails
-   * @deprecated Use 'job:failed' event instead
-   */
-  "schedule:error": [agentName: string, scheduleName: string, error: Error];
-}
-
-// =============================================================================
 // Fleet Status Query Types (US-3)
 // =============================================================================
 

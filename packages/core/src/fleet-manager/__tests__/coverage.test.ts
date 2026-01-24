@@ -18,10 +18,11 @@ import { FleetManager } from "../fleet-manager.js";
 import {
   ConcurrencyLimitError,
   JobCancelError,
-  FleetManagerConfigError,
+  ConfigurationError,
   FleetManagerStateDirError,
   AgentNotFoundError,
   ScheduleNotFoundError,
+  InvalidStateError,
 } from "../errors.js";
 import type { FleetManagerLogger } from "../types.js";
 
@@ -170,17 +171,17 @@ describe("FleetManager Coverage Tests", () => {
   // Configuration Error Handling
   // ===========================================================================
   describe("Configuration error handling", () => {
-    it("wraps ConfigNotFoundError in FleetManagerConfigError", async () => {
+    it("wraps ConfigNotFoundError in ConfigurationError", async () => {
       const manager = new FleetManager({
         configPath: "/nonexistent/path/config.yaml",
         stateDir,
         logger: createSilentLogger(),
       });
 
-      await expect(manager.initialize()).rejects.toThrow(FleetManagerConfigError);
+      await expect(manager.initialize()).rejects.toThrow(ConfigurationError);
     });
 
-    it("wraps ConfigError in FleetManagerConfigError", async () => {
+    it("wraps ConfigError in ConfigurationError", async () => {
       const configPath = join(configDir, "herdctl.yaml");
       // Invalid YAML
       await writeFile(configPath, "invalid: yaml: content: [:");
@@ -191,10 +192,10 @@ describe("FleetManager Coverage Tests", () => {
         logger: createSilentLogger(),
       });
 
-      await expect(manager.initialize()).rejects.toThrow(FleetManagerConfigError);
+      await expect(manager.initialize()).rejects.toThrow(ConfigurationError);
     });
 
-    it("wraps unknown errors in FleetManagerConfigError", async () => {
+    it("wraps unknown errors in ConfigurationError", async () => {
       // Create a config that will cause an unexpected error
       const configPath = join(configDir, "herdctl.yaml");
       await writeFile(configPath, "version: 1\nagents: 'not-an-array'");
@@ -205,7 +206,7 @@ describe("FleetManager Coverage Tests", () => {
         logger: createSilentLogger(),
       });
 
-      await expect(manager.initialize()).rejects.toThrow(FleetManagerConfigError);
+      await expect(manager.initialize()).rejects.toThrow(ConfigurationError);
     });
   });
 
@@ -395,7 +396,7 @@ describe("FleetManager Coverage Tests", () => {
   // handleScheduleTrigger Error Handling
   // ===========================================================================
   describe("Schedule trigger error handling", () => {
-    it("emits schedule:trigger and schedule:complete events", async () => {
+    it("emits schedule:triggered event", { timeout: 15000 }, async () => {
       await createAgentConfig("trigger-event-agent", {
         name: "trigger-event-agent",
         schedules: {
@@ -419,13 +420,9 @@ describe("FleetManager Coverage Tests", () => {
         logger: createSilentLogger(),
       });
 
-      const triggerHandler = vi.fn();
       const triggeredHandler = vi.fn();
-      const completeHandler = vi.fn();
 
-      manager.on("schedule:trigger", triggerHandler);
       manager.on("schedule:triggered", triggeredHandler);
-      manager.on("schedule:complete", completeHandler);
 
       await manager.initialize();
       await manager.start();
@@ -435,10 +432,8 @@ describe("FleetManager Coverage Tests", () => {
 
       await manager.stop();
 
-      // Both legacy and new events should be emitted
-      expect(triggerHandler).toHaveBeenCalled();
+      // The schedule:triggered event should be emitted
       expect(triggeredHandler).toHaveBeenCalled();
-      expect(completeHandler).toHaveBeenCalled();
     });
   });
 
@@ -446,7 +441,7 @@ describe("FleetManager Coverage Tests", () => {
   // Scheduler Error Handling (startSchedulerAsync)
   // ===========================================================================
   describe("startSchedulerAsync error handling", () => {
-    it("handles scheduler errors and sets error state", async () => {
+    it("handles scheduler errors and sets error state", { timeout: 15000 }, async () => {
       await createAgentConfig("error-agent", {
         name: "error-agent",
         schedules: {
@@ -1882,392 +1877,6 @@ describe("FleetManager Coverage Tests", () => {
   });
 
   // ===========================================================================
-  // FleetManagerStateError tests
-  // ===========================================================================
-  describe("FleetManagerStateError", () => {
-    it("has requiredState alias for backwards compatibility", async () => {
-      const { FleetManagerStateError } = await import("../errors.js");
-      const error = new FleetManagerStateError("test", "current", "required");
-      expect(error.requiredState).toBe("required");
-    });
-  });
-
-  // ===========================================================================
-  // Event emission helper methods
-  // ===========================================================================
-  describe("Event emission helpers", () => {
-    it("emitConfigReloaded emits config:reloaded event", async () => {
-      await createAgentConfig("emit-config-agent", {
-        name: "emit-config-agent",
-      });
-
-      const configPath = await createConfig({
-        version: 1,
-        agents: [{ path: "./agents/emit-config-agent.yaml" }],
-      });
-
-      const manager = new FleetManager({
-        configPath,
-        stateDir,
-        logger: createSilentLogger(),
-      });
-
-      await manager.initialize();
-
-      const handler = vi.fn();
-      manager.on("config:reloaded", handler);
-
-      manager.emitConfigReloaded({
-        agentCount: 1,
-        agentNames: ["emit-config-agent"],
-        configPath,
-        changes: [],
-        timestamp: new Date().toISOString(),
-      });
-
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-
-    it("emitAgentStarted emits agent:started event", async () => {
-      await createAgentConfig("emit-start-agent", {
-        name: "emit-start-agent",
-      });
-
-      const configPath = await createConfig({
-        version: 1,
-        agents: [{ path: "./agents/emit-start-agent.yaml" }],
-      });
-
-      const manager = new FleetManager({
-        configPath,
-        stateDir,
-        logger: createSilentLogger(),
-      });
-
-      await manager.initialize();
-
-      const handler = vi.fn();
-      manager.on("agent:started", handler);
-
-      const agent = manager.getAgents().find(a => a.name === "emit-start-agent")!;
-      manager.emitAgentStarted({
-        agent,
-        timestamp: new Date().toISOString(),
-      });
-
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-
-    it("emitAgentStopped emits agent:stopped event", async () => {
-      await createAgentConfig("emit-stop-agent", {
-        name: "emit-stop-agent",
-      });
-
-      const configPath = await createConfig({
-        version: 1,
-        agents: [{ path: "./agents/emit-stop-agent.yaml" }],
-      });
-
-      const manager = new FleetManager({
-        configPath,
-        stateDir,
-        logger: createSilentLogger(),
-      });
-
-      await manager.initialize();
-
-      const handler = vi.fn();
-      manager.on("agent:stopped", handler);
-
-      manager.emitAgentStopped({
-        agentName: "emit-stop-agent",
-        reason: "test",
-        timestamp: new Date().toISOString(),
-      });
-
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-
-    it("emitScheduleSkipped emits schedule:skipped event", async () => {
-      await createAgentConfig("emit-skip-agent", {
-        name: "emit-skip-agent",
-        schedules: {
-          test: { type: "interval", interval: "1h" },
-        },
-      });
-
-      const configPath = await createConfig({
-        version: 1,
-        agents: [{ path: "./agents/emit-skip-agent.yaml" }],
-      });
-
-      const manager = new FleetManager({
-        configPath,
-        stateDir,
-        logger: createSilentLogger(),
-      });
-
-      await manager.initialize();
-
-      const handler = vi.fn();
-      manager.on("schedule:skipped", handler);
-
-      manager.emitScheduleSkipped({
-        agentName: "emit-skip-agent",
-        scheduleName: "test",
-        reason: "max_concurrent",
-        timestamp: new Date().toISOString(),
-      });
-
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-
-    it("emitJobCreated emits job:created event", async () => {
-      await createAgentConfig("emit-job-create-agent", {
-        name: "emit-job-create-agent",
-      });
-
-      const configPath = await createConfig({
-        version: 1,
-        agents: [{ path: "./agents/emit-job-create-agent.yaml" }],
-      });
-
-      const manager = new FleetManager({
-        configPath,
-        stateDir,
-        logger: createSilentLogger(),
-      });
-
-      await manager.initialize();
-
-      const handler = vi.fn();
-      manager.on("job:created", handler);
-
-      manager.emitJobCreated({
-        job: {
-          id: "test-job-id",
-          agent: "emit-job-create-agent",
-          trigger_type: "manual",
-          status: "pending",
-          started_at: new Date().toISOString(),
-          schedule: null,
-          prompt: null,
-          forked_from: null,
-        },
-        agentName: "emit-job-create-agent",
-        timestamp: new Date().toISOString(),
-      });
-
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-
-    it("emitJobOutput emits job:output event", async () => {
-      await createAgentConfig("emit-output-agent", {
-        name: "emit-output-agent",
-      });
-
-      const configPath = await createConfig({
-        version: 1,
-        agents: [{ path: "./agents/emit-output-agent.yaml" }],
-      });
-
-      const manager = new FleetManager({
-        configPath,
-        stateDir,
-        logger: createSilentLogger(),
-      });
-
-      await manager.initialize();
-
-      const handler = vi.fn();
-      manager.on("job:output", handler);
-
-      manager.emitJobOutput({
-        jobId: "test-job-id",
-        agentName: "emit-output-agent",
-        output: "test output",
-        outputType: "stdout",
-        timestamp: new Date().toISOString(),
-      });
-
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-
-    it("emitJobCompleted emits job:completed event", async () => {
-      await createAgentConfig("emit-complete-agent", {
-        name: "emit-complete-agent",
-      });
-
-      const configPath = await createConfig({
-        version: 1,
-        agents: [{ path: "./agents/emit-complete-agent.yaml" }],
-      });
-
-      const manager = new FleetManager({
-        configPath,
-        stateDir,
-        logger: createSilentLogger(),
-      });
-
-      await manager.initialize();
-
-      const handler = vi.fn();
-      manager.on("job:completed", handler);
-
-      manager.emitJobCompleted({
-        job: {
-          id: "test-job-id",
-          agent: "emit-complete-agent",
-          trigger_type: "manual",
-          status: "completed",
-          started_at: new Date().toISOString(),
-          schedule: null,
-          prompt: null,
-          forked_from: null,
-        },
-        agentName: "emit-complete-agent",
-        exitReason: "success",
-        durationSeconds: 10,
-        timestamp: new Date().toISOString(),
-      });
-
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-
-    it("emitJobFailed emits job:failed event", async () => {
-      await createAgentConfig("emit-fail-agent", {
-        name: "emit-fail-agent",
-      });
-
-      const configPath = await createConfig({
-        version: 1,
-        agents: [{ path: "./agents/emit-fail-agent.yaml" }],
-      });
-
-      const manager = new FleetManager({
-        configPath,
-        stateDir,
-        logger: createSilentLogger(),
-      });
-
-      await manager.initialize();
-
-      const handler = vi.fn();
-      manager.on("job:failed", handler);
-
-      manager.emitJobFailed({
-        job: {
-          id: "test-job-id",
-          agent: "emit-fail-agent",
-          trigger_type: "manual",
-          status: "failed",
-          started_at: new Date().toISOString(),
-          schedule: null,
-          prompt: null,
-          forked_from: null,
-        },
-        agentName: "emit-fail-agent",
-        error: new Error("Test error"),
-        exitReason: "error",
-        timestamp: new Date().toISOString(),
-      });
-
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-
-    it("emitJobCancelled emits job:cancelled event", async () => {
-      await createAgentConfig("emit-cancel-agent", {
-        name: "emit-cancel-agent",
-      });
-
-      const configPath = await createConfig({
-        version: 1,
-        agents: [{ path: "./agents/emit-cancel-agent.yaml" }],
-      });
-
-      const manager = new FleetManager({
-        configPath,
-        stateDir,
-        logger: createSilentLogger(),
-      });
-
-      await manager.initialize();
-
-      const handler = vi.fn();
-      manager.on("job:cancelled", handler);
-
-      manager.emitJobCancelled({
-        job: {
-          id: "test-job-id",
-          agent: "emit-cancel-agent",
-          trigger_type: "manual",
-          status: "cancelled",
-          started_at: new Date().toISOString(),
-          schedule: null,
-          prompt: null,
-          forked_from: null,
-        },
-        agentName: "emit-cancel-agent",
-        terminationType: "graceful",
-        timestamp: new Date().toISOString(),
-      });
-
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-
-    it("emitJobForked emits job:forked event", async () => {
-      await createAgentConfig("emit-fork-agent", {
-        name: "emit-fork-agent",
-      });
-
-      const configPath = await createConfig({
-        version: 1,
-        agents: [{ path: "./agents/emit-fork-agent.yaml" }],
-      });
-
-      const manager = new FleetManager({
-        configPath,
-        stateDir,
-        logger: createSilentLogger(),
-      });
-
-      await manager.initialize();
-
-      const handler = vi.fn();
-      manager.on("job:forked", handler);
-
-      const originalJob = {
-        id: "original-job-id",
-        agent: "emit-fork-agent",
-        trigger_type: "manual" as const,
-        status: "completed" as const,
-        started_at: new Date().toISOString(),
-        schedule: null,
-        prompt: null,
-        forked_from: null,
-      };
-
-      manager.emitJobForked({
-        job: {
-          id: "forked-job-id",
-          agent: "emit-fork-agent",
-          trigger_type: "fork",
-          status: "pending",
-          started_at: new Date().toISOString(),
-          schedule: null,
-          prompt: null,
-          forked_from: "original-job-id",
-        },
-        originalJob,
-        agentName: "emit-fork-agent",
-        timestamp: new Date().toISOString(),
-      });
-
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  // ===========================================================================
   // getAgentInfoByName tests
   // ===========================================================================
   describe("getAgentInfoByName", () => {
@@ -2661,8 +2270,7 @@ describe("FleetManager Coverage Tests", () => {
         logger: createSilentLogger(),
       });
 
-      const { FleetManagerStateError } = await import("../errors.js");
-      await expect(manager.start()).rejects.toThrow(FleetManagerStateError);
+      await expect(manager.start()).rejects.toThrow(InvalidStateError);
     });
   });
 

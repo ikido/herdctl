@@ -43,31 +43,10 @@ import type {
   LogStreamOptions,
   ConfigChange,
   ConfigReloadedPayload,
-  AgentStartedPayload,
-  AgentStoppedPayload,
-  ScheduleSkippedPayload,
-  JobCreatedPayload,
-  JobOutputPayload,
-  JobCompletedPayload,
-  JobFailedPayload,
-  JobCancelledPayload,
-  JobForkedPayload,
 } from "./types.js";
 import {
-  emitConfigReloaded as emitConfigReloadedFn,
-  emitAgentStarted as emitAgentStartedFn,
-  emitAgentStopped as emitAgentStoppedFn,
-  emitScheduleSkipped as emitScheduleSkippedFn,
-  emitJobCreated as emitJobCreatedFn,
-  emitJobOutput as emitJobOutputFn,
-  emitJobCompleted as emitJobCompletedFn,
-  emitJobFailed as emitJobFailedFn,
-  emitJobCancelled as emitJobCancelledFn,
-  emitJobForked as emitJobForkedFn,
-} from "./event-emitters.js";
-import {
-  FleetManagerStateError,
-  FleetManagerConfigError,
+  InvalidStateError,
+  ConfigurationError,
   FleetManagerStateDirError,
   FleetManagerShutdownError,
 } from "./errors.js";
@@ -175,7 +154,7 @@ export class FleetManager extends EventEmitter implements FleetManagerContext {
 
   async initialize(): Promise<void> {
     if (this.status !== "uninitialized" && this.status !== "stopped") {
-      throw new FleetManagerStateError("initialize", this.status, ["uninitialized", "stopped"]);
+      throw new InvalidStateError("initialize", this.status, ["uninitialized", "stopped"]);
     }
 
     this.logger.info("Initializing fleet manager...");
@@ -210,7 +189,7 @@ export class FleetManager extends EventEmitter implements FleetManagerContext {
 
   async start(): Promise<void> {
     if (this.status !== "initialized") {
-      throw new FleetManagerStateError("start", this.status, "initialized");
+      throw new InvalidStateError("start", this.status, "initialized");
     }
 
     this.logger.info("Starting fleet manager...");
@@ -306,21 +285,6 @@ export class FleetManager extends EventEmitter implements FleetManagerContext {
   async *streamAgentLogs(agentName: string): AsyncIterable<LogEntry> { yield* this.logStreaming.streamAgentLogs(agentName); }
 
   // ===========================================================================
-  // Event Emission Helpers (US-2) - kept for backwards compatibility
-  // ===========================================================================
-
-  emitConfigReloaded(payload: ConfigReloadedPayload): void { emitConfigReloadedFn(this, payload); }
-  emitAgentStarted(payload: AgentStartedPayload): void { emitAgentStartedFn(this, payload); }
-  emitAgentStopped(payload: AgentStoppedPayload): void { emitAgentStoppedFn(this, payload); }
-  emitScheduleSkipped(payload: ScheduleSkippedPayload): void { emitScheduleSkippedFn(this, payload); }
-  emitJobCreated(payload: JobCreatedPayload): void { emitJobCreatedFn(this, payload); }
-  emitJobOutput(payload: JobOutputPayload): void { emitJobOutputFn(this, payload); }
-  emitJobCompleted(payload: JobCompletedPayload): void { emitJobCompletedFn(this, payload); }
-  emitJobFailed(payload: JobFailedPayload): void { emitJobFailedFn(this, payload); }
-  emitJobCancelled(payload: JobCancelledPayload): void { emitJobCancelledFn(this, payload); }
-  emitJobForked(payload: JobForkedPayload): void { emitJobForkedFn(this, payload); }
-
-  // ===========================================================================
   // Private Methods
   // ===========================================================================
 
@@ -338,12 +302,12 @@ export class FleetManager extends EventEmitter implements FleetManagerContext {
       return await loadConfig(this.configPath);
     } catch (error) {
       if (error instanceof ConfigNotFoundError) {
-        throw new FleetManagerConfigError(`Configuration file not found. ${error.message}`, this.configPath, { cause: error });
+        throw new ConfigurationError(`Configuration file not found. ${error.message}`, { configPath: this.configPath, cause: error });
       }
       if (error instanceof ConfigError) {
-        throw new FleetManagerConfigError(`Invalid configuration: ${error.message}`, this.configPath, { cause: error });
+        throw new ConfigurationError(`Invalid configuration: ${error.message}`, { configPath: this.configPath, cause: error });
       }
-      throw new FleetManagerConfigError(`Failed to load configuration: ${error instanceof Error ? error.message : String(error)}`, this.configPath, { cause: error instanceof Error ? error : undefined });
+      throw new ConfigurationError(`Failed to load configuration: ${error instanceof Error ? error.message : String(error)}`, { configPath: this.configPath, cause: error instanceof Error ? error : undefined });
     }
   }
 

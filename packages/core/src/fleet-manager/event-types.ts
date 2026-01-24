@@ -331,28 +331,6 @@ export interface FleetManagerEventMap {
    * This is a catch-all for errors that aren't tied to a specific job.
    */
   error: [error: Error];
-
-  // ===========================================================================
-  // Legacy Events (backwards compatibility)
-  // ===========================================================================
-
-  /**
-   * Legacy event: Emitted when a schedule triggers an agent run.
-   * @deprecated Use 'schedule:triggered' event instead for typed payload.
-   */
-  "schedule:trigger": [agentName: string, scheduleName: string];
-
-  /**
-   * Legacy event: Emitted when an agent run completes successfully.
-   * @deprecated Use 'job:completed' event instead for typed payload.
-   */
-  "schedule:complete": [agentName: string, scheduleName: string];
-
-  /**
-   * Legacy event: Emitted when an agent run fails.
-   * @deprecated Use 'job:failed' event instead for typed payload.
-   */
-  "schedule:error": [agentName: string, scheduleName: string, error: Error];
 }
 
 // =============================================================================

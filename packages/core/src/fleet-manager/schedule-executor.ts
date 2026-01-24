@@ -65,10 +65,7 @@ export class ScheduleExecutor {
 
     logger.info(`Triggering ${agent.name}/${scheduleName}`);
 
-    // Emit legacy event for backwards compatibility
-    emitter.emit("schedule:trigger", agent.name, scheduleName);
-
-    // Emit new typed event with full payload
+    // Emit typed event with full payload
     emitter.emit("schedule:triggered", {
       agentName: agent.name,
       scheduleName,
@@ -166,14 +163,9 @@ export class ScheduleExecutor {
           );
         }
       }
-
-      // Emit legacy completion event for backwards compatibility
-      emitter.emit("schedule:complete", agent.name, scheduleName);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       logger.error(`Error in ${agent.name}/${scheduleName}: ${err.message}`);
-      // Emit legacy error event for backwards compatibility
-      emitter.emit("schedule:error", agent.name, scheduleName, err);
       // Don't re-throw - we want to continue running the fleet even if a job fails
     }
   }

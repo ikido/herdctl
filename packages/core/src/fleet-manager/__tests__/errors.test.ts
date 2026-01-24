@@ -13,9 +13,7 @@ import {
   JobNotFoundError,
   ScheduleNotFoundError,
   InvalidStateError,
-  FleetManagerStateError,
   ConcurrencyLimitError,
-  FleetManagerConfigError,
   FleetManagerStateDirError,
   FleetManagerShutdownError,
   JobCancelError,
@@ -242,29 +240,6 @@ describe("FleetManagerError classes", () => {
   });
 
   // ===========================================================================
-  // FleetManagerStateError (deprecated)
-  // ===========================================================================
-  describe("FleetManagerStateError (deprecated)", () => {
-    it("creates error with operation and states", () => {
-      const error = new FleetManagerStateError("start", "uninitialized", "initialized");
-      expect(error.message).toContain("Cannot start");
-      expect(error.name).toBe("FleetManagerStateError");
-      expect(error.operation).toBe("start");
-      expect(error.currentState).toBe("uninitialized");
-      expect(error.expectedState).toBe("initialized");
-    });
-
-    it("provides requiredState alias for backwards compatibility", () => {
-      const error = new FleetManagerStateError("stop", "starting", [
-        "running",
-        "initialized",
-      ]);
-      expect(error.requiredState).toEqual(["running", "initialized"]);
-      expect(error.requiredState).toBe(error.expectedState);
-    });
-  });
-
-  // ===========================================================================
   // ConcurrencyLimitError
   // ===========================================================================
   describe("ConcurrencyLimitError", () => {
@@ -298,35 +273,6 @@ describe("FleetManagerError classes", () => {
     it("creates error with cause", () => {
       const cause = new Error("Queue full");
       const error = new ConcurrencyLimitError("agent", 3, 3, { cause });
-      expect(error.cause).toBe(cause);
-    });
-  });
-
-  // ===========================================================================
-  // FleetManagerConfigError (deprecated)
-  // ===========================================================================
-  describe("FleetManagerConfigError (deprecated)", () => {
-    it("creates error with message only", () => {
-      const error = new FleetManagerConfigError("Config not found");
-      expect(error.message).toBe("Config not found");
-      expect(error.name).toBe("FleetManagerConfigError");
-      expect(error.code).toBe(FleetManagerErrorCode.CONFIG_LOAD_ERROR);
-      expect(error.configPath).toBeUndefined();
-    });
-
-    it("creates error with config path", () => {
-      const error = new FleetManagerConfigError(
-        "Failed to load",
-        "/path/to/config.yaml"
-      );
-      expect(error.configPath).toBe("/path/to/config.yaml");
-    });
-
-    it("creates error with cause", () => {
-      const cause = new Error("YAML parse error");
-      const error = new FleetManagerConfigError("Config invalid", undefined, {
-        cause,
-      });
       expect(error.cause).toBe(cause);
     });
   });
@@ -582,11 +528,6 @@ describe("FleetManagerError classes", () => {
     describe("isInvalidStateError", () => {
       it("returns true for InvalidStateError", () => {
         const error = new InvalidStateError("op", "current", "expected");
-        expect(isInvalidStateError(error)).toBe(true);
-      });
-
-      it("returns true for FleetManagerStateError (deprecated subclass)", () => {
-        const error = new FleetManagerStateError("op", "current", "expected");
         expect(isInvalidStateError(error)).toBe(true);
       });
 

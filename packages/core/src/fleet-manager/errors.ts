@@ -398,29 +398,6 @@ export class InvalidStateError extends FleetManagerError {
   }
 }
 
-/**
- * Error thrown when the fleet manager is not in the correct state for an operation
- *
- * @deprecated Use InvalidStateError instead. This class is kept for backwards compatibility.
- */
-export class FleetManagerStateError extends InvalidStateError {
-  constructor(
-    operation: string,
-    currentState: string,
-    requiredState: string | string[]
-  ) {
-    super(operation, currentState, requiredState);
-    this.name = "FleetManagerStateError";
-  }
-
-  /**
-   * Alias for expectedState for backwards compatibility
-   */
-  get requiredState(): string | string[] {
-    return this.expectedState;
-  }
-}
-
 // =============================================================================
 // Operational Errors
 // =============================================================================
@@ -480,34 +457,6 @@ export class ConcurrencyLimitError extends FleetManagerError {
    */
   isAtLimit(): boolean {
     return this.currentJobs >= this.limit;
-  }
-}
-
-// =============================================================================
-// Configuration Loading Errors (kept for backwards compatibility)
-// =============================================================================
-
-/**
- * Error thrown when configuration loading fails
- *
- * @deprecated Use ConfigurationError instead for new code.
- * This class is kept for backwards compatibility.
- */
-export class FleetManagerConfigError extends FleetManagerError {
-  /** The path that was being loaded */
-  public readonly configPath?: string;
-
-  constructor(
-    message: string,
-    configPath?: string,
-    options?: { cause?: Error }
-  ) {
-    super(message, {
-      cause: options?.cause,
-      code: FleetManagerErrorCode.CONFIG_LOAD_ERROR,
-    });
-    this.name = "FleetManagerConfigError";
-    this.configPath = configPath;
   }
 }
 

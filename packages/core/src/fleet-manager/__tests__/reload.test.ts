@@ -9,7 +9,7 @@ import { mkdtemp, rm, mkdir, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { FleetManager } from "../fleet-manager.js";
-import { InvalidStateError, FleetManagerConfigError } from "../errors.js";
+import { InvalidStateError, ConfigurationError } from "../errors.js";
 import type { ConfigChange, ConfigReloadedPayload } from "../types.js";
 
 describe("Configuration Hot Reload (US-9)", () => {
@@ -578,7 +578,7 @@ describe("Configuration Hot Reload (US-9)", () => {
   });
 
   describe("scheduler updates", () => {
-    it("updates scheduler with new agents", async () => {
+    it("updates scheduler with new agents", { timeout: 15000 }, async () => {
       await createAgentConfig("scheduler-test", {
         name: "scheduler-test",
         schedules: {

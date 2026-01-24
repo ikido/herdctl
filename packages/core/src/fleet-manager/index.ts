@@ -110,7 +110,6 @@ export type {
   FleetManagerState,
   FleetManagerStatus,
   FleetManagerLogger,
-  FleetManagerEvents,
   // Event types (US-2)
   FleetManagerEventMap,
   FleetManagerEventName,
@@ -160,21 +159,18 @@ export {
 export {
   // Base error
   FleetManagerError,
-  // New error classes (US-12)
+  // Error classes
   ConfigurationError,
   AgentNotFoundError,
   JobNotFoundError,
   ScheduleNotFoundError,
   InvalidStateError,
   ConcurrencyLimitError,
-  // Job control error classes (US-6)
-  JobCancelError,
-  JobForkError,
-  // Legacy error classes (backwards compatibility)
-  FleetManagerStateError,
-  FleetManagerConfigError,
   FleetManagerStateDirError,
   FleetManagerShutdownError,
+  // Job control error classes
+  JobCancelError,
+  JobForkError,
 } from "./errors.js";
 
 // Validation error interface for ConfigurationError
