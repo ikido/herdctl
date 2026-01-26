@@ -3,9 +3,9 @@ name: Integration Tests
 on:
   # Manual trigger from GitHub UI
   workflow_dispatch:
-  # Run after merges to main (and feature branch for testing)
+  # Run after merges to main
   push:
-    branches: [main, feature/integration-tests-ci]
+    branches: [main]
     paths:
       - 'packages/**'
       - 'integration-tests/**'
