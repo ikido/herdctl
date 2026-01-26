@@ -12,6 +12,9 @@ import { join } from "node:path";
 import { query as claudeSdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { createJob, getJob, updateJob } from "../state/index.js";
 import { JobExecutor, type SDKQueryFunction } from "../runner/index.js";
+import { HookExecutor, type HookContext } from "../hooks/index.js";
+import type { ResolvedAgent, HookEvent } from "../config/index.js";
+import type { JobMetadata } from "../state/schemas/job-metadata.js";
 import type {
   TriggerOptions,
   TriggerResult,
@@ -164,15 +167,22 @@ export class JobControl {
           durationSeconds: result.durationSeconds ?? 0,
           timestamp: new Date().toISOString(),
         });
+
+        // Execute hooks for completed job
+        await this.executeHooks(agent, jobMetadata, "completed", scheduleName);
       } else {
+        const error = result.error ?? new Error("Job failed without error details");
         emitter.emit("job:failed", {
           job: jobMetadata,
           agentName,
-          error: result.error ?? new Error("Job failed without error details"),
+          error,
           exitReason: "error",
           durationSeconds: result.durationSeconds,
           timestamp: new Date().toISOString(),
         });
+
+        // Execute hooks for failed job
+        await this.executeHooks(agent, jobMetadata, "failed", scheduleName, error.message);
       }
     }
 
@@ -439,5 +449,117 @@ export class JobControl {
 
     await Promise.all(cancelPromises);
     logger.info("All jobs cancelled");
+  }
+
+  // ===========================================================================
+  // Hook Execution
+  // ===========================================================================
+
+  /**
+   * Execute hooks for a job (after_run and on_error)
+   */
+  private async executeHooks(
+    agent: ResolvedAgent,
+    jobMetadata: JobMetadata,
+    event: HookEvent,
+    scheduleName?: string,
+    errorMessage?: string
+  ): Promise<void> {
+    const logger = this.ctx.getLogger();
+
+    // Check if agent has any hooks configured
+    if (!agent.hooks) {
+      return;
+    }
+
+    // Build hook context from job metadata
+    const context = this.buildHookContext(agent, jobMetadata, event, scheduleName, errorMessage);
+
+    // Resolve agent workspace for hook execution
+    const agentWorkspace = this.resolveAgentWorkspace(agent);
+
+    // Create hook executor with appropriate cwd
+    const hookExecutor = new HookExecutor({
+      logger,
+      cwd: agentWorkspace,
+    });
+
+    // Execute after_run hooks (run for all events)
+    if (agent.hooks.after_run && agent.hooks.after_run.length > 0) {
+      logger.debug(`Executing ${agent.hooks.after_run.length} after_run hook(s)`);
+      const afterRunResult = await hookExecutor.executeHooks(agent.hooks, context, "after_run");
+
+      if (afterRunResult.shouldFailJob) {
+        logger.warn(
+          `Hook failure with continue_on_error=false detected for job ${jobMetadata.id}`
+        );
+      }
+    }
+
+    // Execute on_error hooks (only for failed events)
+    if (event === "failed" && agent.hooks.on_error && agent.hooks.on_error.length > 0) {
+      logger.debug(`Executing ${agent.hooks.on_error.length} on_error hook(s)`);
+      const onErrorResult = await hookExecutor.executeHooks(agent.hooks, context, "on_error");
+
+      if (onErrorResult.shouldFailJob) {
+        logger.warn(
+          `on_error hook failure with continue_on_error=false detected for job ${jobMetadata.id}`
+        );
+      }
+    }
+  }
+
+  /**
+   * Build HookContext from job metadata and agent info
+   */
+  private buildHookContext(
+    agent: ResolvedAgent,
+    jobMetadata: JobMetadata,
+    event: HookEvent,
+    scheduleName?: string,
+    errorMessage?: string
+  ): HookContext {
+    const completedAt = jobMetadata.finished_at ?? new Date().toISOString();
+    const startedAt = new Date(jobMetadata.started_at);
+    const completedAtDate = new Date(completedAt);
+    const durationMs = completedAtDate.getTime() - startedAt.getTime();
+
+    return {
+      event,
+      job: {
+        id: jobMetadata.id,
+        agentId: agent.name,
+        scheduleName: scheduleName ?? jobMetadata.schedule ?? undefined,
+        startedAt: jobMetadata.started_at,
+        completedAt,
+        durationMs,
+      },
+      result: {
+        success: event === "completed",
+        output: jobMetadata.summary ?? "",
+        error: errorMessage,
+      },
+      agent: {
+        id: agent.name,
+        name: agent.identity?.name ?? agent.name,
+      },
+    };
+  }
+
+  /**
+   * Resolve the agent's workspace path
+   */
+  private resolveAgentWorkspace(agent: ResolvedAgent): string | undefined {
+    if (!agent.workspace) {
+      return undefined;
+    }
+
+    // If workspace is a string, it's the path directly
+    if (typeof agent.workspace === "string") {
+      return agent.workspace;
+    }
+
+    // If workspace is an object with root property
+    return agent.workspace.root;
   }
 }

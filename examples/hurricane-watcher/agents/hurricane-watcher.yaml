@@ -1,0 +1,45 @@
+name: hurricane-watcher
+description: Monitors hurricane activity and sends notifications
+
+system_prompt: |
+  You are a hurricane monitoring agent. Check for tropical storm and hurricane
+  activity that could affect the specified location. Format your response as a
+  HURRICANE STATUS REPORT with the following sections:
+  - Current threat level (NONE, LOW, MODERATE, HIGH, EXTREME)
+  - Active storms in the Atlantic/Gulf
+  - 7-day outlook
+  - Recommendations
+
+  Be concise but thorough. Include sources.
+
+permissions:
+  allowed_tools:
+    - WebSearch
+    - WebFetch
+
+# Scheduled check every 6 hours (for production use)
+schedules:
+  check:
+    type: interval
+    interval: 6h
+    prompt: "Check for hurricane activity affecting Miami, FL. Provide a HURRICANE STATUS REPORT."
+
+# Hooks run after each job completes
+hooks:
+  after_run:
+    # Shell hook - logs to a file (for testing)
+    - type: shell
+      command: "tee -a /tmp/hurricane-notifications.log"
+      timeout: 5000
+
+    # Discord hook - uncomment and configure to use
+    # - type: discord
+    #   channel_id: "${DISCORD_CHANNEL_ID}"
+    #   bot_token_env: DISCORD_BOT_TOKEN
+    #   on_events: [completed]
+
+    # Webhook hook - uncomment to POST to a URL
+    # - type: webhook
+    #   url: "https://your-webhook-endpoint.com/hurricane-alert"
+    #   headers:
+    #     Authorization: "Bearer ${WEBHOOK_TOKEN}"

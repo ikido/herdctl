@@ -1,0 +1,8 @@
+version: 1
+
+fleet:
+  name: hurricane-watcher-example
+  description: Example showing scheduled agent with notification hooks
+
+agents:
+  - path: agents/hurricane-watcher.yaml
