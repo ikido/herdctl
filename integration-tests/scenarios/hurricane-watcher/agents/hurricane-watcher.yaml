@@ -38,9 +38,10 @@ system_prompt: |
   Recommended Actions: [if any, or "None required"]
 
 # Allow web search for checking hurricane news
-allowed_tools:
-  - WebSearch
-  - WebFetch
+permissions:
+  allowed_tools:
+    - WebSearch
+    - WebFetch
 
 schedules:
   monitor:

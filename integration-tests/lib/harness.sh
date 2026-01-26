@@ -277,7 +277,14 @@ get_job_logs() {
         return 1
     fi
 
-    run_herdctl job "$job_id" --logs 2>&1
+    # Read full output from the raw job file to avoid truncation
+    local job_file="$TEST_DIR/.herdctl/jobs/${job_id}.jsonl"
+    if [[ -f "$job_file" ]]; then
+        cat "$job_file"
+    else
+        # Fall back to herdctl command if file not found
+        run_herdctl job "$job_id" --logs 2>&1
+    fi
 }
 
 # =============================================================================
