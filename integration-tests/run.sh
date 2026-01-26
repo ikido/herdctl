@@ -111,7 +111,7 @@ for scenario_dir in "${SCENARIOS_TO_RUN[@]}"; do
 
     if [[ ! -f "$scenario_dir/test.sh" ]]; then
         echo -e "${RED}No test.sh found in $scenario_dir${NC}"
-        ((TOTAL_FAILED++))
+        TOTAL_FAILED=$((TOTAL_FAILED + 1))
         FAILED_SCENARIOS+=("$scenario_name")
         continue
     fi
@@ -122,10 +122,10 @@ for scenario_dir in "${SCENARIOS_TO_RUN[@]}"; do
     # Run the test
     if "$scenario_dir/test.sh"; then
         echo -e "${GREEN}Scenario PASSED: $scenario_name${NC}"
-        ((TOTAL_PASSED++))
+        TOTAL_PASSED=$((TOTAL_PASSED + 1))
     else
         echo -e "${RED}Scenario FAILED: $scenario_name${NC}"
-        ((TOTAL_FAILED++))
+        TOTAL_FAILED=$((TOTAL_FAILED + 1))
         FAILED_SCENARIOS+=("$scenario_name")
     fi
 done
