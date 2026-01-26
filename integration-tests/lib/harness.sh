@@ -181,6 +181,38 @@ trigger_agent() {
     return 0
 }
 
+# Cross-platform timeout function (works on macOS without GNU coreutils)
+run_with_timeout() {
+    local timeout_secs="$1"
+    shift
+
+    # Try gtimeout first (brew install coreutils), then timeout, then fallback
+    if command -v gtimeout &> /dev/null; then
+        gtimeout "$timeout_secs" "$@"
+    elif command -v timeout &> /dev/null; then
+        timeout "$timeout_secs" "$@"
+    else
+        # Fallback: run in background and kill after timeout
+        "$@" &
+        local pid=$!
+
+        # Wait for process or timeout
+        local elapsed=0
+        while kill -0 "$pid" 2>/dev/null; do
+            if [[ $elapsed -ge $timeout_secs ]]; then
+                kill -9 "$pid" 2>/dev/null
+                wait "$pid" 2>/dev/null
+                return 124  # Same exit code as GNU timeout
+            fi
+            sleep 1
+            ((elapsed++))
+        done
+
+        wait "$pid"
+        return $?
+    fi
+}
+
 trigger_and_wait() {
     local agent_name="$1"
     local timeout="${2:-120}"  # Default 2 minute timeout
@@ -190,8 +222,16 @@ trigger_and_wait() {
     log_info "Triggering agent and waiting: $agent_name (timeout: ${timeout}s)"
 
     local output
-    output=$(timeout "$timeout" node "$HERDCTL" trigger "$agent_name" "${extra_args[@]}" 2>&1)
-    local exit_code=$?
+    local exit_code
+
+    # Capture output while using timeout
+    local temp_output
+    temp_output=$(mktemp)
+
+    run_with_timeout "$timeout" node "$HERDCTL" trigger "$agent_name" "${extra_args[@]}" > "$temp_output" 2>&1
+    exit_code=$?
+    output=$(cat "$temp_output")
+    rm -f "$temp_output"
 
     log_debug "Full output: $output"
 
@@ -252,7 +292,8 @@ assert_job_completed() {
     local status
     status=$(get_job_status "$job_id" 2>&1)
 
-    if echo "$status" | grep -q '"status":"completed"'; then
+    # Match "status": "completed" with or without spaces
+    if echo "$status" | grep -qE '"status"[[:space:]]*:[[:space:]]*"completed"'; then
         log_success "Job $job_id is completed"
         return 0
     elif echo "$status" | grep -q 'Status: completed'; then
@@ -273,7 +314,8 @@ assert_job_failed() {
     local status
     status=$(get_job_status "$job_id" 2>&1)
 
-    if echo "$status" | grep -q '"status":"failed"'; then
+    # Match "status": "failed" with or without spaces
+    if echo "$status" | grep -qE '"status"[[:space:]]*:[[:space:]]*"failed"'; then
         log_success "Job $job_id failed as expected"
         return 0
     elif echo "$status" | grep -q 'Status: failed'; then

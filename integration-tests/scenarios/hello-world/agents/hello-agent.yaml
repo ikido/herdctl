@@ -1,0 +1,13 @@
+# Hello Agent for integration testing
+# Simple agent that responds with a hello message
+
+name: hello-agent
+description: A simple test agent that says hello
+
+schedules:
+  test:
+    type: interval
+    interval: 1h
+    prompt: |
+      Respond with exactly: "Hello from herdctl integration test!"
+      Do not use any tools. Just respond with that message.

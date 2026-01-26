@@ -15,7 +15,8 @@ init_scenario "hello-world"
 # =============================================================================
 
 test_trigger_completes() {
-    trigger_and_wait "hello-agent" 60
+    # Pass explicit prompt to ensure the agent knows what to do
+    trigger_and_wait "hello-agent" 60 --prompt "Say hello. Respond with: Hello from herdctl integration test!"
     assert_job_completed
 }
 
