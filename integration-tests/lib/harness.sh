@@ -387,10 +387,10 @@ run_test() {
     log_info "Running test: $test_name"
 
     if $test_fn; then
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         log_success "Test passed: $test_name"
     else
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         log_error "Test failed: $test_name"
     fi
 }
