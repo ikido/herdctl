@@ -371,25 +371,27 @@ export const AgentWorkspaceSchema = z.union([z.string(), WorkspaceSchema]);
 // Agent Configuration Schema
 // =============================================================================
 
-export const AgentConfigSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
-  workspace: AgentWorkspaceSchema.optional(),
-  repo: z.string().optional(),
-  identity: IdentitySchema.optional(),
-  system_prompt: z.string().optional(),
-  work_source: WorkSourceSchema.optional(),
-  schedules: z.record(z.string(), ScheduleSchema).optional(),
-  session: SessionSchema.optional(),
-  permissions: PermissionsSchema.optional(),
-  mcp_servers: z.record(z.string(), McpServerSchema).optional(),
-  chat: AgentChatSchema.optional(),
-  docker: DockerSchema.optional(),
-  instances: InstancesSchema.optional(),
-  model: z.string().optional(),
-  max_turns: z.number().int().positive().optional(),
-  permission_mode: PermissionModeSchema.optional(),
-});
+export const AgentConfigSchema = z
+  .object({
+    name: z.string(),
+    description: z.string().optional(),
+    workspace: AgentWorkspaceSchema.optional(),
+    repo: z.string().optional(),
+    identity: IdentitySchema.optional(),
+    system_prompt: z.string().optional(),
+    work_source: WorkSourceSchema.optional(),
+    schedules: z.record(z.string(), ScheduleSchema).optional(),
+    session: SessionSchema.optional(),
+    permissions: PermissionsSchema.optional(),
+    mcp_servers: z.record(z.string(), McpServerSchema).optional(),
+    chat: AgentChatSchema.optional(),
+    docker: DockerSchema.optional(),
+    instances: InstancesSchema.optional(),
+    model: z.string().optional(),
+    max_turns: z.number().int().positive().optional(),
+    permission_mode: PermissionModeSchema.optional(),
+  })
+  .strict();
 
 // =============================================================================
 // Chat Schemas
@@ -418,21 +420,24 @@ export const WebhooksSchema = z.object({
 // Fleet Configuration Schema
 // =============================================================================
 
-export const FleetConfigSchema = z.object({
-  version: z.number().int().positive().default(1),
-  fleet: z
-    .object({
-      name: z.string().optional(),
-      description: z.string().optional(),
-    })
-    .optional(),
-  defaults: DefaultsSchema.optional(),
-  workspace: WorkspaceSchema.optional(),
-  agents: z.array(AgentReferenceSchema).optional().default([]),
-  chat: ChatSchema.optional(),
-  webhooks: WebhooksSchema.optional(),
-  docker: DockerSchema.optional(),
-});
+export const FleetConfigSchema = z
+  .object({
+    version: z.number().int().positive().default(1),
+    fleet: z
+      .object({
+        name: z.string().optional(),
+        description: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+    defaults: DefaultsSchema.optional(),
+    workspace: WorkspaceSchema.optional(),
+    agents: z.array(AgentReferenceSchema).optional().default([]),
+    chat: ChatSchema.optional(),
+    webhooks: WebhooksSchema.optional(),
+    docker: DockerSchema.optional(),
+  })
+  .strict();
 
 // =============================================================================
 // Type Exports
