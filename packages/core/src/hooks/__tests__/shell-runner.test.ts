@@ -131,9 +131,11 @@ describe("ShellHookRunner", () => {
     it("should respect timeout configuration", async () => {
       const runner = new ShellHookRunner({ logger: mockLogger });
 
+      // Use node instead of sleep - it responds to SIGTERM immediately
+      // sleep on Linux ignores SIGTERM and waits for SIGKILL
       const config: ShellHookConfig = {
         type: "shell",
-        command: "sleep 10",
+        command: "node -e \"setTimeout(() => {}, 100000)\"",
         timeout: 100, // 100ms timeout
       };
 
