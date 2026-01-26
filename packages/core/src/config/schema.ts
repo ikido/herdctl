@@ -362,6 +362,81 @@ export const AgentChatSchema = z.object({
 });
 
 // =============================================================================
+// Execution Hook Schemas
+// =============================================================================
+
+/**
+ * Hook events that can trigger hooks
+ */
+export const HookEventSchema = z.enum(["completed", "failed", "timeout", "cancelled"]);
+
+/**
+ * Base hook configuration shared by all hook types
+ */
+const BaseHookConfigSchema = z.object({
+  /** Whether to continue with subsequent hooks if this hook fails (default: true) */
+  continue_on_error: z.boolean().optional().default(true),
+  /** Filter which events trigger this hook (default: all events) */
+  on_events: z.array(HookEventSchema).optional(),
+});
+
+/**
+ * Shell hook configuration - executes a shell command with HookContext on stdin
+ */
+export const ShellHookConfigSchema = BaseHookConfigSchema.extend({
+  type: z.literal("shell"),
+  /** Shell command to execute */
+  command: z.string().min(1),
+  /** Timeout in milliseconds (default: 30000) */
+  timeout: z.number().int().positive().optional().default(30000),
+});
+
+/**
+ * Webhook hook configuration - POSTs HookContext JSON to a URL
+ */
+export const WebhookHookConfigSchema = BaseHookConfigSchema.extend({
+  type: z.literal("webhook"),
+  /** URL to POST the HookContext to */
+  url: z.string().url(),
+  /** HTTP method (default: POST) */
+  method: z.enum(["POST", "PUT"]).optional().default("POST"),
+  /** Custom headers (supports ${ENV_VAR} substitution) */
+  headers: z.record(z.string(), z.string()).optional(),
+  /** Timeout in milliseconds (default: 10000) */
+  timeout: z.number().int().positive().optional().default(10000),
+});
+
+/**
+ * Discord hook configuration - sends notification to Discord channel
+ */
+export const DiscordHookConfigSchema = BaseHookConfigSchema.extend({
+  type: z.literal("discord"),
+  /** Discord channel ID */
+  channel_id: z.string().min(1),
+  /** Environment variable name containing the bot token */
+  bot_token_env: z.string().min(1),
+});
+
+/**
+ * Union of all hook configuration types
+ */
+export const HookConfigSchema = z.discriminatedUnion("type", [
+  ShellHookConfigSchema,
+  WebhookHookConfigSchema,
+  DiscordHookConfigSchema,
+]);
+
+/**
+ * Agent hooks configuration
+ */
+export const AgentHooksSchema = z.object({
+  /** Hooks to run after every job (success or failure) */
+  after_run: z.array(HookConfigSchema).optional(),
+  /** Hooks to run only when a job fails */
+  on_error: z.array(HookConfigSchema).optional(),
+});
+
+// =============================================================================
 // Agent Workspace Schema (can be string path or full workspace object)
 // =============================================================================
 
@@ -385,6 +460,7 @@ export const AgentConfigSchema = z
     permissions: PermissionsSchema.optional(),
     mcp_servers: z.record(z.string(), McpServerSchema).optional(),
     chat: AgentChatSchema.optional(),
+    hooks: AgentHooksSchema.optional(),
     docker: DockerSchema.optional(),
     instances: InstancesSchema.optional(),
     model: z.string().optional(),
@@ -475,3 +551,16 @@ export type AgentChatDiscord = z.infer<typeof AgentChatDiscordSchema>;
 export type AgentChat = z.infer<typeof AgentChatSchema>;
 export type AgentWorkspace = z.infer<typeof AgentWorkspaceSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+// Hook types - Output types (after parsing with defaults applied)
+export type HookEvent = z.infer<typeof HookEventSchema>;
+export type ShellHookConfig = z.infer<typeof ShellHookConfigSchema>;
+export type WebhookHookConfig = z.infer<typeof WebhookHookConfigSchema>;
+export type DiscordHookConfig = z.infer<typeof DiscordHookConfigSchema>;
+export type HookConfig = z.infer<typeof HookConfigSchema>;
+export type AgentHooks = z.infer<typeof AgentHooksSchema>;
+// Hook types - Input types (for constructing configs, allows optional fields)
+export type ShellHookConfigInput = z.input<typeof ShellHookConfigSchema>;
+export type WebhookHookConfigInput = z.input<typeof WebhookHookConfigSchema>;
+export type DiscordHookConfigInput = z.input<typeof DiscordHookConfigSchema>;
+export type HookConfigInput = z.input<typeof HookConfigSchema>;
+export type AgentHooksInput = z.input<typeof AgentHooksSchema>;

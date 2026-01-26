@@ -30,3 +30,6 @@ export * from "./scheduler/index.js";
 
 // Fleet Manager exports (PRD 7)
 export * from "./fleet-manager/index.js";
+
+// Hooks exports (Execution Hooks System)
+export * from "./hooks/index.js";
