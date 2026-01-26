@@ -1,15 +1,14 @@
 {
-  "id": "0c269c9d-7e0a-4234-b859-55e4a53eb8a1",
-  "status": "completed",
-  "startedAt": "2026-01-20T18:48:04.019Z",
-  "updatedAt": "2026-01-20T20:50:06.572Z",
+  "id": "58efc428-8b2c-4d4f-9a41-f5638b8f9d2a",
+  "status": "running",
+  "startedAt": "2026-01-21T00:30:33.339Z",
+  "updatedAt": "2026-01-21T01:07:57.259Z",
   "agentPlugin": "claude",
   "trackerPlugin": "beads-bv",
-  "epicId": "herdctl-giz",
+  "epicId": "herdctl-2pw",
   "currentIteration": 9,
   "maxIterations": 200,
   "totalTasks": 0,
   "tasksCompleted": 9,
-  "cwd": "/Users/ed/Code/overseer-clones/herdctl",
-  "endedAt": "2026-01-20T20:50:06.572Z"
+  "cwd": "/Users/ed/Code/overseer-clones/herdctl"
 }

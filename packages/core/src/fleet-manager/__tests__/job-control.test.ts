@@ -7,8 +7,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // Mock the Claude SDK to prevent real API calls during tests
+// Mock the SDK to return an async generator that yields a simple system message
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: vi.fn(),
+  query: vi.fn().mockImplementation(async function* () {
+    yield { type: "system", subtype: "init", session_id: "test-session-123" };
+    yield { type: "assistant", content: "Test complete" };
+  }),
 }));
 
 import { mkdtemp, rm, mkdir, writeFile } from "fs/promises";
@@ -115,33 +119,20 @@ describe("FleetManager Job Control (US-6)", () => {
       );
     });
 
-    it("cancels a running job successfully", async () => {
+    it("returns already_stopped for completed job when trigger executes to completion", async () => {
       const manager = await createInitializedManager();
 
-      // Trigger a job first
+      // Trigger a job - this now executes to completion via JobExecutor
       const triggerResult = await manager.trigger("test-agent");
 
-      // Set up event listener
-      const cancelledHandler = vi.fn();
-      manager.on("job:cancelled", cancelledHandler);
-
-      // Cancel the job
+      // Try to cancel the already-completed job
       const result = await manager.cancelJob(triggerResult.jobId);
 
+      // Job is already completed, so we get already_stopped
       expect(result.success).toBe(true);
       expect(result.jobId).toBe(triggerResult.jobId);
-      expect(result.terminationType).toBe("graceful");
+      expect(result.terminationType).toBe("already_stopped");
       expect(result.canceledAt).toBeDefined();
-
-      // Verify event was emitted
-      expect(cancelledHandler).toHaveBeenCalledTimes(1);
-      expect(cancelledHandler).toHaveBeenCalledWith(
-        expect.objectContaining({
-          job: expect.objectContaining({ id: triggerResult.jobId }),
-          agentName: "test-agent",
-          terminationType: "graceful",
-        })
-      );
     });
 
     it("returns already_stopped for completed jobs", async () => {

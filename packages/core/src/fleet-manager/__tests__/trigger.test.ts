@@ -7,8 +7,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // Mock the Claude SDK to prevent real API calls during tests
+// Mock the SDK to return an async generator that yields a simple system message
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: vi.fn(),
+  query: vi.fn().mockImplementation(async function* () {
+    yield { type: "system", subtype: "init", session_id: "test-session-123" };
+    yield { type: "assistant", content: "Test complete" };
+  }),
 }));
 
 import { mkdtemp, rm, mkdir, writeFile } from "fs/promises";
@@ -364,9 +368,9 @@ describe("Manual Agent Triggering (US-5)", () => {
       const r2 = await manager.trigger("priority-agent", "with_prompt");
       expect(r2.prompt).toBe("Schedule prompt");
 
-      // No prompt when neither specified
+      // Default prompt when neither specified (job execution requires a prompt)
       const r3 = await manager.trigger("priority-agent", "no_prompt");
-      expect(r3.prompt).toBeUndefined();
+      expect(r3.prompt).toBe("Execute your configured task");
     });
   });
 

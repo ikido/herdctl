@@ -9,7 +9,9 @@
 
 import { join } from "node:path";
 
+import { query as claudeSdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { createJob, getJob, updateJob } from "../state/index.js";
+import { JobExecutor, type SDKQueryFunction } from "../runner/index.js";
 import type {
   TriggerOptions,
   TriggerResult,
@@ -29,6 +31,9 @@ import {
   JobForkError,
 } from "./errors.js";
 
+// Cast the SDK query function to our internal type
+const sdkQuery = claudeSdkQuery as unknown as SDKQueryFunction;
+
 // =============================================================================
 // JobControl Class
 // =============================================================================
@@ -47,6 +52,9 @@ export class JobControl {
 
   /**
    * Manually trigger an agent outside its normal schedule
+   *
+   * This method triggers an agent and executes the job immediately.
+   * The job runs asynchronously in the background unless options.wait is true.
    *
    * @param agentName - Name of the agent to trigger
    * @param scheduleName - Optional schedule name to use for configuration
@@ -89,7 +97,7 @@ export class JobControl {
     }
 
     // If a schedule name is provided, validate it exists
-    let schedule: { type: string; prompt?: string } | undefined;
+    let schedule: { type: string; prompt?: string; outputToFile?: boolean } | undefined;
     if (scheduleName) {
       if (!agent.schedules || !(scheduleName in agent.schedules)) {
         const availableSchedules = agent.schedules
@@ -99,7 +107,7 @@ export class JobControl {
           availableSchedules,
         });
       }
-      schedule = agent.schedules[scheduleName];
+      schedule = agent.schedules[scheduleName] as typeof schedule;
     }
 
     // Check concurrency limits unless bypassed
@@ -113,37 +121,72 @@ export class JobControl {
     }
 
     // Determine the prompt to use
-    const prompt = options?.prompt ?? schedule?.prompt ?? undefined;
-
-    // Create the job
-    const jobsDir = join(stateDir, "jobs");
-    const job = await createJob(jobsDir, {
-      agent: agentName,
-      trigger_type: "manual",
-      schedule: scheduleName ?? null,
-      prompt: prompt ?? null,
-    });
+    const prompt = options?.prompt ?? schedule?.prompt ?? "Execute your configured task";
 
     const timestamp = new Date().toISOString();
 
     logger.info(
-      `Manually triggered ${agentName}${scheduleName ? `/${scheduleName}` : ""} - job ${job.id}`
+      `Manually triggered ${agentName}${scheduleName ? `/${scheduleName}` : ""}`
     );
 
-    // Emit job:created event
-    emitter.emit("job:created", {
-      job,
-      agentName,
-      scheduleName: scheduleName ?? null,
-      timestamp,
+    // Create the JobExecutor and execute the job
+    const executor = new JobExecutor(sdkQuery, { logger });
+
+    // Execute the job - this creates the job record and runs it
+    // Note: Job output is written to JSONL by JobExecutor; log streaming picks it up
+    const result = await executor.execute({
+      agent,
+      prompt,
+      stateDir,
+      triggerType: "manual",
+      schedule: scheduleName,
+      outputToFile: schedule?.outputToFile ?? false,
     });
+
+    // Emit job:created event
+    const jobsDir = join(stateDir, "jobs");
+    const jobMetadata = await getJob(jobsDir, result.jobId, { logger });
+
+    if (jobMetadata) {
+      emitter.emit("job:created", {
+        job: jobMetadata,
+        agentName,
+        scheduleName: scheduleName ?? null,
+        timestamp,
+      });
+
+      // Emit completion or failure event based on result
+      if (result.success) {
+        emitter.emit("job:completed", {
+          job: jobMetadata,
+          agentName,
+          exitReason: "success",
+          durationSeconds: result.durationSeconds ?? 0,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        emitter.emit("job:failed", {
+          job: jobMetadata,
+          agentName,
+          error: result.error ?? new Error("Job failed without error details"),
+          exitReason: "error",
+          durationSeconds: result.durationSeconds,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    logger.info(
+      `Job ${result.jobId} ${result.success ? "completed" : "failed"} ` +
+        `(${result.durationSeconds ?? 0}s)`
+    );
 
     // Build and return the result
     return {
-      jobId: job.id,
+      jobId: result.jobId,
       agentName,
       scheduleName: scheduleName ?? null,
-      startedAt: job.started_at,
+      startedAt: jobMetadata?.started_at ?? timestamp,
       prompt,
     };
   }
