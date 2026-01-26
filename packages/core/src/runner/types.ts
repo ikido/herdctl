@@ -39,7 +39,14 @@ export interface RunnerOptions {
  * SDK message types (as received from Claude Agent SDK)
  */
 export interface SDKMessage {
-  type: "system" | "assistant" | "tool_use" | "tool_result" | "error";
+  type:
+    | "system"
+    | "assistant"
+    | "tool_use"
+    | "tool_result"
+    | "result"
+    | "user"
+    | "error";
   subtype?: string;
   content?: string;
   session_id?: string;

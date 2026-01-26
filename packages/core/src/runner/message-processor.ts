@@ -46,12 +46,21 @@ function safeBoolean(value: unknown): boolean | undefined {
  */
 function isValidMessageType(
   type: unknown
-): type is "system" | "assistant" | "tool_use" | "tool_result" | "error" {
+): type is
+  | "system"
+  | "assistant"
+  | "tool_use"
+  | "tool_result"
+  | "result"
+  | "user"
+  | "error" {
   return (
     type === "system" ||
     type === "assistant" ||
     type === "tool_use" ||
     type === "tool_result" ||
+    type === "result" ||
+    type === "user" ||
     type === "error"
   );
 }
@@ -197,6 +206,61 @@ function processErrorMessage(message: SDKMessage): ProcessedMessage {
   };
 }
 
+/**
+ * Process a user message from the SDK
+ *
+ * User messages represent the input prompt. We log them as system messages
+ * with subtype "user_input" for traceability.
+ */
+function processUserMessage(message: SDKMessage): ProcessedMessage {
+  const output: JobOutputInput = {
+    type: "system",
+    subtype: "user_input",
+  };
+
+  if (message.content !== undefined) {
+    output.content =
+      typeof message.content === "string"
+        ? message.content
+        : JSON.stringify(message.content);
+  }
+
+  return { output };
+}
+
+/**
+ * Process a result message from the SDK
+ *
+ * Result messages are an alternative format for tool results.
+ * We normalize them to our standard tool_result format.
+ */
+function processResultMessage(message: SDKMessage): ProcessedMessage {
+  const output: JobOutputInput = {
+    type: "tool_result",
+  };
+
+  if (message.tool_use_id) {
+    output.tool_use_id = message.tool_use_id;
+  }
+
+  // Result messages may have the result in different fields
+  if (message.result !== undefined) {
+    output.result = message.result;
+  } else if (message.content !== undefined) {
+    output.result = message.content;
+  }
+
+  if (message.success !== undefined) {
+    output.success = message.success as boolean;
+  }
+
+  if (message.error !== undefined) {
+    output.error = message.error as string;
+  }
+
+  return { output };
+}
+
 // =============================================================================
 // Main Processing Function
 // =============================================================================
@@ -270,6 +334,12 @@ export function processSDKMessage(message: SDKMessage): ProcessedMessage {
 
     case "tool_result":
       return processToolResultMessage(message);
+
+    case "result":
+      return processResultMessage(message);
+
+    case "user":
+      return processUserMessage(message);
 
     case "error":
       return processErrorMessage(message);
