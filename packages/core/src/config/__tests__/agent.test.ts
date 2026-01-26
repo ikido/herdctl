@@ -180,6 +180,40 @@ describe("AgentConfigSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("rejects unknown fields at root level (strict mode)", () => {
+    // This catches common mistakes like putting allowed_tools at root
+    // instead of under permissions
+    const result = AgentConfigSchema.safeParse({
+      name: "test-agent",
+      allowed_tools: ["WebSearch", "WebFetch"], // Wrong! Should be under permissions
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      // Should have an unrecognized_keys error
+      const unrecognizedError = result.error.issues.find(
+        (issue) => issue.code === "unrecognized_keys"
+      );
+      expect(unrecognizedError).toBeDefined();
+      expect(unrecognizedError?.message).toContain("allowed_tools");
+    }
+  });
+
+  it("accepts allowed_tools when properly nested under permissions", () => {
+    const result = AgentConfigSchema.safeParse({
+      name: "test-agent",
+      permissions: {
+        allowed_tools: ["WebSearch", "WebFetch"],
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.permissions?.allowed_tools).toEqual([
+        "WebSearch",
+        "WebFetch",
+      ]);
+    }
+  });
 });
 
 describe("IdentitySchema", () => {

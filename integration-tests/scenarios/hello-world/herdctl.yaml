@@ -1,0 +1,7 @@
+# Simple hello-world scenario for integration testing
+# This tests basic agent triggering and job completion
+
+version: 1
+
+agents:
+  - path: ./agents/hello-agent.yaml

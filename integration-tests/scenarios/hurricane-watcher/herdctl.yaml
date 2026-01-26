@@ -1,0 +1,9 @@
+# Hurricane Watcher scenario
+# Demonstrates a practical agent that monitors weather threats
+#
+# In production, this would run every 6 hours. For testing, we trigger manually.
+
+version: 1
+
+agents:
+  - path: ./agents/hurricane-watcher.yaml
