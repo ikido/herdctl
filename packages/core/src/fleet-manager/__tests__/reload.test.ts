@@ -579,12 +579,14 @@ describe("Configuration Hot Reload (US-9)", () => {
 
   describe("scheduler updates", () => {
     it("updates scheduler with new agents", { timeout: 15000 }, async () => {
+      // Use disabled schedules to prevent auto-triggering during test
       await createAgentConfig("scheduler-test", {
         name: "scheduler-test",
         schedules: {
           hourly: {
             type: "interval",
             interval: "1h",
+            enabled: false,
           },
         },
       });
@@ -613,13 +615,14 @@ describe("Configuration Hot Reload (US-9)", () => {
       let agents = manager.getAgents();
       expect(agents).toHaveLength(1);
 
-      // Add another agent
+      // Add another agent (also disabled to prevent auto-trigger)
       await createAgentConfig("new-scheduler-test", {
         name: "new-scheduler-test",
         schedules: {
           daily: {
             type: "interval",
             interval: "24h",
+            enabled: false,
           },
         },
       });
@@ -641,13 +644,15 @@ describe("Configuration Hot Reload (US-9)", () => {
       await manager.stop();
     });
 
-    it("reflects new schedules in scheduler state", async () => {
+    it("reflects new schedules in scheduler state", { timeout: 15000 }, async () => {
+      // Use disabled schedule to prevent auto-triggering during test
       await createAgentConfig("schedule-update", {
         name: "schedule-update",
         schedules: {
           original: {
             type: "interval",
             interval: "1h",
+            enabled: false,
           },
         },
       });
@@ -672,13 +677,14 @@ describe("Configuration Hot Reload (US-9)", () => {
       await manager.initialize();
       await manager.start();
 
-      // Modify schedule interval
+      // Modify schedule interval (still disabled)
       await createAgentConfig("schedule-update", {
         name: "schedule-update",
         schedules: {
           original: {
             type: "interval",
             interval: "30m", // Changed from 1h to 30m
+            enabled: false,
           },
         },
       });

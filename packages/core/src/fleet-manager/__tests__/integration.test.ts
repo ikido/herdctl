@@ -98,6 +98,10 @@ describe("FleetManager Integration Tests (US-13)", () => {
   describe("Full Flow: initialize → start → trigger → complete → stop", () => {
     it("completes a full lifecycle with manual trigger", async () => {
       // Setup: Create agent config
+      // Note: The schedule is disabled to prevent auto-triggering during the test.
+      // The scheduler's first check runs immediately on start(), and interval schedules
+      // with no last_run_at would trigger immediately. We disable the schedule so it
+      // won't race with our manual trigger() call, but it can still be triggered manually.
       await createAgentConfig("workflow-agent", {
         name: "workflow-agent",
         description: "Agent for testing full workflow",
@@ -106,6 +110,7 @@ describe("FleetManager Integration Tests (US-13)", () => {
             type: "interval",
             interval: "1h",
             prompt: "Check hourly tasks",
+            enabled: false,
           },
         },
       });

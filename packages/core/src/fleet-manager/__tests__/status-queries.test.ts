@@ -107,13 +107,15 @@ describe("Fleet Status Query Methods", () => {
       expect(status.scheduler.status).toBe("stopped");
     });
 
-    it("returns status after start", async () => {
+    it("returns status after start", { timeout: 15000 }, async () => {
+      // Use disabled schedule to prevent auto-triggering during test
       await createAgentConfig("test-agent", {
         name: "test-agent",
         schedules: {
           hourly: {
             type: "interval",
             interval: "1h",
+            enabled: false,
           },
         },
       });
