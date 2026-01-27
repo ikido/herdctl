@@ -1,0 +1,11 @@
+version: 1
+
+fleet:
+  name: multi-agent-example
+  description: Example fleet running multiple agents from different sources
+
+# Reference agents from sibling example directories
+# This demonstrates composing a fleet from existing agent configs
+agents:
+  - path: ../hurricane-watcher/agents/hurricane-watcher.yaml
+  - path: ../price-checker/agents/price-checker.yaml
