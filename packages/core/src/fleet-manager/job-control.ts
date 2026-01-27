@@ -202,6 +202,7 @@ export class JobControl {
       scheduleName: scheduleName ?? null,
       startedAt: jobMetadata?.started_at ?? timestamp,
       prompt,
+      success: result.success,
       sessionId: result.sessionId,
     };
   }

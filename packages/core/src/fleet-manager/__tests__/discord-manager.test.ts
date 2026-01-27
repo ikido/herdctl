@@ -1605,7 +1605,7 @@ describe("DiscordManager session integration", () => {
     };
 
     // Create a mock FleetManager (emitter) with trigger method
-    triggerMock = vi.fn().mockResolvedValue({ jobId: "job-123", sessionId: "sdk-session-456" });
+    triggerMock = vi.fn().mockResolvedValue({ jobId: "job-123", success: true, sessionId: "sdk-session-456" });
     emitterWithTrigger = Object.assign(new EventEmitter(), {
       trigger: triggerMock,
     });
@@ -1775,7 +1775,7 @@ describe("DiscordManager session integration", () => {
     expect(mockSessionManager.setSession).toHaveBeenCalledWith("channel1", "sdk-session-456");
   });
 
-  it("handles session manager errors gracefully", async () => {
+  it("handles getSession errors gracefully", async () => {
     // Create a mock connector with session manager where getSession fails
     mockSessionManager.getSession.mockRejectedValue(new Error("Session error"));
 

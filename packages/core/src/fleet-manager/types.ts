@@ -544,10 +544,18 @@ export interface TriggerResult {
   prompt?: string;
 
   /**
+   * Whether the job completed successfully
+   */
+  success: boolean;
+
+  /**
    * Session ID from the Claude Agent SDK
    *
    * This can be used for subsequent requests to resume
    * the conversation with context preserved.
+   *
+   * Note: Only trust this session ID if `success` is true.
+   * Failed jobs may return session IDs that are invalid.
    */
   sessionId?: string;
 }

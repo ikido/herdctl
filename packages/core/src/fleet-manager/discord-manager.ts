@@ -515,7 +515,7 @@ export class DiscordManager {
             resume?: string;
             onMessage?: (message: { type: string; content?: string; message?: { content?: unknown } }) => void | Promise<void>;
           }
-        ) => Promise<{ jobId: string; sessionId?: string }>;
+        ) => Promise<{ jobId: string; success: boolean; sessionId?: string }>;
       };
 
       // Execute job via FleetManager.trigger()
@@ -548,7 +548,8 @@ export class DiscordManager {
       }
 
       // Store the SDK session ID for future conversation continuity
-      if (connector && result.sessionId) {
+      // Only store if the job succeeded - failed jobs may return invalid session IDs
+      if (connector && result.sessionId && result.success) {
         try {
           await connector.sessionManager.setSession(event.metadata.channelId, result.sessionId);
           logger.debug(`Stored session ${result.sessionId} for channel ${event.metadata.channelId}`);
@@ -557,6 +558,8 @@ export class DiscordManager {
           logger.warn(`Failed to store session: ${errorMessage}`);
           // Don't fail the message handling for session storage failure
         }
+      } else if (connector && result.sessionId && !result.success) {
+        logger.debug(`Not storing session ${result.sessionId} for channel ${event.metadata.channelId} - job failed`);
       }
 
       // Emit event for tracking
