@@ -23,18 +23,82 @@ npm install @herdctl/discord
 
 Add Discord chat configuration to your agent YAML:
 
+### DM-Only Bot (Simplest Setup)
+
 ```yaml
 name: my-assistant
 model: claude-sonnet-4-20250514
 
 chat:
   discord:
+    bot_token_env: MY_ASSISTANT_DISCORD_TOKEN
+    guilds: []  # Empty array = no channel restrictions
+    dm:
+      enabled: true
+      mode: auto  # Respond to all DMs automatically
+```
+
+### Channel-Based Bot
+
+```yaml
+name: support-bot
+model: claude-sonnet-4-20250514
+
+chat:
+  discord:
+    bot_token_env: SUPPORT_BOT_DISCORD_TOKEN
+    guilds:
+      - id: "123456789012345678"  # Your server ID
+        channels:
+          - id: "987654321098765432"
+            name: "#support"  # Optional, for logging
+            mode: mention     # Only respond when @mentioned
+          - id: "111222333444555666"
+            name: "#general"
+            mode: auto        # Respond to all messages
+    dm:
+      enabled: true
+      mode: auto
+```
+
+### Full Configuration Reference
+
+```yaml
+chat:
+  discord:
+    # Required: Environment variable containing bot token
     bot_token_env: DISCORD_BOT_TOKEN
-    mode: auto  # Respond to all DMs automatically
-    allowed_channels:
-      - "123456789"  # Specific channel IDs
-    allowed_roles:
-      - "987654321"  # Role IDs that can interact
+
+    # Optional: Session expiry in hours (default: 24)
+    session_expiry_hours: 24
+
+    # Optional: Log verbosity (default: standard)
+    log_level: standard  # minimal | standard | verbose
+
+    # Optional: Bot presence/activity
+    presence:
+      activity_type: watching  # playing | watching | listening | competing
+      activity_message: "for support requests"
+
+    # Required: Guild (server) configurations (can be empty array for DM-only)
+    guilds:
+      - id: "123456789012345678"
+        channels:
+          - id: "987654321098765432"
+            name: "#support"
+            mode: mention  # mention | auto
+            context_messages: 10  # Messages to include for context
+        # Per-guild DM settings (optional, overrides global)
+        dm:
+          enabled: true
+          mode: auto
+
+    # Optional: Global DM configuration
+    dm:
+      enabled: true
+      mode: auto  # mention | auto
+      allowlist: ["user-id-1", "user-id-2"]  # Only these users can DM
+      blocklist: ["blocked-user-id"]  # These users cannot DM
 ```
 
 ### Chat Modes
@@ -42,12 +106,40 @@ chat:
 - **`auto`** - Respond to all messages in allowed channels/DMs
 - **`mention`** - Only respond when the bot is @mentioned
 
+## Multiple Bots / Multiple Agents
+
+Each agent can have its own Discord bot with a unique token. Simply use different environment variable names:
+
+```yaml
+# Agent 1: Support Bot
+name: support-bot
+chat:
+  discord:
+    bot_token_env: SUPPORT_BOT_TOKEN
+    # ...
+
+# Agent 2: Developer Assistant
+name: dev-assistant
+chat:
+  discord:
+    bot_token_env: DEV_ASSISTANT_TOKEN
+    # ...
+```
+
+Then set both environment variables:
+```bash
+export SUPPORT_BOT_TOKEN="your-support-bot-token"
+export DEV_ASSISTANT_TOKEN="your-dev-assistant-token"
+```
+
+This allows you to run multiple agents with different Discord identities, each with their own bot user, avatar, and permissions.
+
 ## Features
 
 - **Conversation Continuity** - Sessions persist across messages using Claude SDK session resumption
 - **DM Support** - Users can chat privately with agents
 - **Channel Support** - Agents can participate in server channels
-- **Role-Based Access** - Restrict which users can interact
+- **Per-Agent Bots** - Each agent can have its own Discord bot identity
 - **Slash Commands** - Built-in `/status`, `/reset`, and `/help` commands
 - **Typing Indicators** - Visual feedback while agent is processing
 - **Message Splitting** - Long responses are automatically split to fit Discord's limits
@@ -60,12 +152,6 @@ chat:
 | `/status` | Show agent status and current session info |
 | `/reset` | Clear conversation context (start fresh) |
 
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `DISCORD_BOT_TOKEN` | Your Discord bot token (or use custom env var name in config) |
-
 ## Bot Setup
 
 1. Create a Discord application at [discord.com/developers](https://discord.com/developers/applications)
@@ -76,7 +162,7 @@ chat:
    - Read Message History
    - Use Slash Commands
 5. Invite the bot to your server
-6. Set `DISCORD_BOT_TOKEN` environment variable
+6. Set your bot token as an environment variable (use a unique name per bot)
 
 ## Documentation
 

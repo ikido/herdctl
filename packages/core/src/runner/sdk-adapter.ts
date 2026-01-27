@@ -175,7 +175,20 @@ export function toSDKOptions(
   result.systemPrompt = buildSystemPrompt(agent);
 
   // Setting sources for proper settings discovery
-  result.settingSources = [...DEFAULT_SETTING_SOURCES];
+  // Can be explicitly configured via setting_sources, or defaults based on workspace:
+  // - With workspace: ["project"] - inherit CLAUDE.md, skills, commands from workspace
+  // - Without workspace: [] - don't load settings from wherever herdctl is running
+  const workspace = agent.workspace;
+  if (agent.setting_sources !== undefined) {
+    // Explicit configuration takes precedence
+    result.settingSources = [...agent.setting_sources];
+  } else if (workspace) {
+    // Default for project-embedded agents
+    result.settingSources = ["project"];
+  } else {
+    // Default for standalone agents
+    result.settingSources = [...DEFAULT_SETTING_SOURCES];
+  }
 
   // MCP servers (always include, even if empty)
   result.mcpServers = transformMcpServers(agent.mcp_servers);
@@ -193,6 +206,13 @@ export function toSDKOptions(
 
   if (options.fork) {
     result.forkSession = true;
+  }
+
+  // Working directory (from workspace config)
+  // Note: workspace variable already declared above for settingSources
+  if (workspace) {
+    // workspace can be a string path or an object with root property
+    result.cwd = typeof workspace === "string" ? workspace : workspace.root;
   }
 
   return result;

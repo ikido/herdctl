@@ -173,6 +173,8 @@ export interface SDKQueryOptions {
   forkSession?: boolean;
   /** Maximum number of agentic turns before stopping */
   maxTurns?: number;
+  /** Current working directory for the session */
+  cwd?: string;
 }
 
 // =============================================================================

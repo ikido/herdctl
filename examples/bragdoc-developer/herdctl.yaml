@@ -1,0 +1,7 @@
+version: 1
+
+fleet:
+  name: bragdoc-developer
+
+agents:
+  - path: ./agents/developer.yaml
