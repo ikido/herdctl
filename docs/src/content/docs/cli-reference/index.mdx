@@ -225,6 +225,100 @@ herdctl init
 herdctl init --example price-checker
 ```
 
+### sessions
+
+List and manage Claude Code sessions for your agents. When agents run with session persistence enabled, herdctl tracks their Claude Code session IDs, making them discoverable and resumable.
+
+```bash
+herdctl sessions [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-a, --agent <name>` | Filter sessions by agent name |
+| `-v, --verbose` | Show full resume commands for each session |
+| `--json` | Output as JSON for scripting |
+
+**Examples:**
+
+```bash
+# List all sessions
+herdctl sessions
+
+# Output:
+# Sessions (2)
+# ══════════════════════════════════════════════════════════════════════════════
+# AGENT               SESSION ID                               LAST ACTIVE   JOBS
+# ──────────────────────────────────────────────────────────────────────────────
+# bragdoc-developer   a166a1e4-c89e-41f8-80c8-d73f6cd0d39c     5m ago        19
+# price-checker       b234e5f6-a78b-49c0-d12e-3456789abcde     2h ago        3
+
+# Filter by agent
+herdctl sessions --agent bragdoc-developer
+
+# Show full resume commands
+herdctl sessions --verbose
+
+# JSON output for scripting
+herdctl sessions --json
+```
+
+### sessions resume
+
+Resume a Claude Code session interactively. This launches Claude Code with the `--resume` flag in the agent's configured workspace directory.
+
+```bash
+herdctl sessions resume [session-id]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `session-id` | Session ID, partial ID, or agent name (optional - defaults to most recent) |
+
+**Behavior:**
+
+- If no argument is provided, resumes the most recently active session
+- Supports partial session ID matching (e.g., `a166a1e4` matches `a166a1e4-c89e-41f8-80c8-d73f6cd0d39c`)
+- Accepts agent name to resume that agent's session
+- Automatically changes to the agent's workspace directory before launching Claude
+
+**Examples:**
+
+```bash
+# Resume the most recent session
+herdctl sessions resume
+
+# Resume by full session ID
+herdctl sessions resume a166a1e4-c89e-41f8-80c8-d73f6cd0d39c
+
+# Resume by partial session ID
+herdctl sessions resume a166a1e4
+
+# Resume by agent name
+herdctl sessions resume bragdoc-developer
+```
+
+**Output:**
+
+```
+Resuming session for bragdoc-developer (19 jobs, last active 5m ago)
+Session: a166a1e4-c89e-41f8-80c8-d73f6cd0d39c
+Workspace: /path/to/project
+
+Running: claude --resume a166a1e4-c89e-41f8-80c8-d73f6cd0d39c
+     in: /path/to/project
+```
+
+<Aside type="tip">
+The `sessions resume` command is particularly useful for picking up where a Discord bot or scheduled agent left off, allowing you to continue the conversation interactively.
+</Aside>
+
+See [Sessions](/concepts/sessions/) for more about session modes and persistence.
+
 ## Global Options
 
 These options work with all commands:
@@ -277,5 +371,6 @@ See [Fleet Configuration](/configuration/fleet-config/) and [Agent Configuration
 
 - [Getting Started](/getting-started/) — First-time setup guide
 - [Agent Configuration](/configuration/agent-config/) — Agent YAML reference
+- [Sessions](/concepts/sessions/) — Session modes and persistence
 - [Hooks](/concepts/hooks/) — Post-job notifications and actions
 - [Triggers](/concepts/triggers/) — How jobs are started

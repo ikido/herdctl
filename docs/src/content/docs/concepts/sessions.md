@@ -201,18 +201,20 @@ session:
 
 ### Manual Resume
 
-Resume a specific job or agent session:
+Resume an agent's session interactively with Claude Code:
 
 ```bash
-# Resume a specific job's session
-herdctl jobs resume <job-id>
+# Resume the most recent session
+herdctl sessions resume
 
-# Resume the most recent session for an agent
-herdctl agent resume <agent-name>
+# Resume a specific session by ID (supports partial match)
+herdctl sessions resume a166a1e4
 
-# Resume with additional context
-herdctl jobs resume <job-id> --prompt "Continue from where you left off. Focus on the failing test."
+# Resume by agent name
+herdctl sessions resume bragdoc-coder
 ```
+
+This launches Claude Code in the agent's workspace with the full conversation history restored, allowing you to continue the work interactively.
 
 ### Resume Behavior
 
@@ -396,29 +398,38 @@ Sessions are persisted in the herdctl state directory:
 
 ## Session Commands
 
+List and resume Claude Code sessions from the command line:
+
 ```bash
-# List sessions
-herdctl session list
-herdctl session list --agent bragdoc-coder
-herdctl session list --status active
+# List all sessions
+herdctl sessions
 
-# Show session details
-herdctl session show <session-id>
-herdctl session show <session-id> --history  # Include message history
+# Filter by agent
+herdctl sessions --agent bragdoc-coder
 
-# Fork a session
-herdctl session fork <session-id>
+# Show full resume commands
+herdctl sessions --verbose
 
-# Delete expired sessions
-herdctl session cleanup
-herdctl session cleanup --older-than 7d
+# JSON output for scripting
+herdctl sessions --json
 
-# Export session for debugging
-herdctl session export <session-id> > session-debug.json
+# Resume the most recent session in Claude Code
+herdctl sessions resume
+
+# Resume a specific session (supports partial ID match)
+herdctl sessions resume a166a1e4
+
+# Resume by agent name
+herdctl sessions resume bragdoc-coder
 ```
+
+The `sessions resume` command launches Claude Code with `--resume <session-id>` in the agent's configured workspace directory, making it easy to pick up where a Discord bot or scheduled agent left off.
+
+See the [CLI Reference](/cli-reference/#sessions) for complete command options.
 
 ## Related Concepts
 
 - [Jobs](/concepts/jobs/) - Individual executions that use sessions
 - [Agents](/concepts/agents/) - Configure session behavior per agent
 - [State Management](/internals/state-management/) - Session persistence details
+- [CLI Reference: sessions](/cli-reference/#sessions) - Full command options for session management
