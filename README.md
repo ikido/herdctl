@@ -96,7 +96,7 @@ pnpm test
 
 ## License
 
-UNLICENSED - All rights reserved.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## Author
 

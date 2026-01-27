@@ -226,7 +226,7 @@ packages:
   "name": "herdctl",
   "version": "0.0.1",
   "description": "Autonomous Agent Fleet Management for Claude Code",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "herdctl": "./bin/herdctl.js"
@@ -616,7 +616,7 @@ Each PRD session should:
 ## Notes
 
 - **Package manager**: pnpm (not bun)
-- **License**: UNLICENSED (keeping options open for monetization)
+- **License**: MIT
 - **Repo visibility**: Private initially
 - **MCP per agent**: Fully supported via SDK's programmatic mcpServers option
 - **Workspace git strategy**: Out of scope (left to agent CLAUDE.md)
