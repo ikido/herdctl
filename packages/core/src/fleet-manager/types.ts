@@ -466,6 +466,15 @@ export interface TriggerOptions {
   prompt?: string;
 
   /**
+   * Session ID to resume for conversation continuity
+   *
+   * When provided, the Claude Agent SDK will resume the conversation
+   * from this session, maintaining context from previous interactions.
+   * This is typically used for chat-based triggers like Discord.
+   */
+  resume?: string;
+
+  /**
    * Work items to process during this trigger
    *
    * These work items will be passed to the agent instead of fetching
@@ -533,6 +542,14 @@ export interface TriggerResult {
    * The prompt that was used for the trigger
    */
   prompt?: string;
+
+  /**
+   * Session ID from the Claude Agent SDK
+   *
+   * This can be used for subsequent requests to resume
+   * the conversation with context preserved.
+   */
+  sessionId?: string;
 }
 
 // =============================================================================
