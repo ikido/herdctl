@@ -148,14 +148,14 @@ describe("triggerCommand", () => {
       expect(mockFleetManagerInstance.trigger).toHaveBeenCalledWith(
         "code-reviewer",
         undefined,
-        { prompt: undefined }
+        expect.objectContaining({ prompt: undefined })
       );
     });
 
     it("displays job ID on success", async () => {
       await triggerCommand("code-reviewer", {});
 
-      expect(consoleLogs.some((log) => log.includes("Job triggered successfully"))).toBe(true);
+      expect(consoleLogs.some((log) => log.includes("Job completed"))).toBe(true);
       expect(consoleLogs.some((log) => log.includes("job-2024-01-15-abc123"))).toBe(true);
     });
 
@@ -181,7 +181,7 @@ describe("triggerCommand", () => {
       expect(mockFleetManagerInstance.trigger).toHaveBeenCalledWith(
         "code-reviewer",
         "hourly",
-        { prompt: undefined }
+        expect.objectContaining({ prompt: undefined })
       );
     });
 
@@ -201,7 +201,7 @@ describe("triggerCommand", () => {
       expect(mockFleetManagerInstance.trigger).toHaveBeenCalledWith(
         "code-reviewer",
         undefined,
-        { prompt: customPrompt }
+        expect.objectContaining({ prompt: customPrompt })
       );
     });
 
