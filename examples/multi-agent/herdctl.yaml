@@ -1,0 +1,65 @@
+version: 1
+
+fleet:
+  name: multi-agent-example
+  description: Example fleet running multiple agents with Discord chat
+
+# Reference agents from sibling example directories
+# This demonstrates composing a fleet from existing agent configs
+# with per-agent overrides to customize behavior for this fleet
+agents:
+  - path: ../hurricane-watcher/agents/hurricane-watcher.yaml
+    overrides:
+      # Run in the original example directory for access to context.md
+      workspace: ../hurricane-watcher
+      # Check more frequently in this fleet
+      schedules:
+        check:
+          interval: 2h
+      # Disable hooks - the base agent has Discord notification hooks,
+      # but we're using chat instead so notifications would be redundant
+      hooks:
+        after_run: []
+      # Add Discord chat - uses its own bot
+      chat:
+        discord:
+          bot_token_env: HURRICANE_DISCORD_BOT_TOKEN
+          session_expiry_hours: 24
+          guilds:
+            - id: "${DISCORD_GUILD_ID}"
+              channels:
+                - id: "${DISCORD_CHANNEL_ID}"
+                  name: "#alerts"
+                  mode: mention
+                  context_messages: 10
+          dm:
+            enabled: true
+            mode: auto
+
+  - path: ../price-checker/agents/price-checker.yaml
+    overrides:
+      # Run in the original example directory for access to context.md
+      workspace: ../price-checker
+      # Check more frequently in this fleet
+      schedules:
+        check:
+          interval: 1h
+      # Disable hooks - the base agent has Discord notification hooks,
+      # but we're using chat instead so notifications would be redundant
+      hooks:
+        after_run: []
+      # Add Discord chat - uses its own bot
+      chat:
+        discord:
+          bot_token_env: PRICE_DISCORD_BOT_TOKEN
+          session_expiry_hours: 24
+          guilds:
+            - id: "${DISCORD_GUILD_ID}"
+              channels:
+                - id: "${DISCORD_CHANNEL_ID}"
+                  name: "#alerts"
+                  mode: mention
+                  context_messages: 10
+          dm:
+            enabled: true
+            mode: auto

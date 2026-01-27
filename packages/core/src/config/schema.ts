@@ -186,11 +186,19 @@ export const WorkspaceSchema = z.object({
 });
 
 // =============================================================================
-// Agent Reference Schema
+// Agent Reference Schema (partial - overrides defined after AgentConfigSchema)
 // =============================================================================
 
+// Note: AgentOverridesSchema is defined below after AgentConfigSchema
+// to avoid forward reference issues. We use a lazy reference here.
 export const AgentReferenceSchema = z.object({
   path: z.string(),
+  /**
+   * Optional overrides to apply on top of the agent config loaded from path.
+   * These are deep-merged after fleet defaults are applied.
+   * Accepts any partial agent config fields.
+   */
+  overrides: z.lazy(() => AgentOverridesSchema).optional(),
 });
 
 // =============================================================================
@@ -487,6 +495,17 @@ export const AgentConfigSchema = z
   })
   .strict();
 
+/**
+ * Schema for agent overrides in fleet config.
+ * Uses passthrough to allow any partial agent config fields.
+ * The base agent config is already validated, so we just need to
+ * accept any valid partial structure that will be deep-merged.
+ *
+ * This allows overriding nested fields like `schedules.check.interval`
+ * without having to re-specify all required fields like `type`.
+ */
+export const AgentOverridesSchema = z.record(z.string(), z.unknown());
+
 // =============================================================================
 // Chat Schemas
 // =============================================================================
@@ -550,6 +569,7 @@ export type Instances = z.infer<typeof InstancesSchema>;
 export type Docker = z.infer<typeof DockerSchema>;
 export type Defaults = z.infer<typeof DefaultsSchema>;
 export type Workspace = z.infer<typeof WorkspaceSchema>;
+export type AgentOverrides = z.infer<typeof AgentOverridesSchema>;
 export type AgentReference = z.infer<typeof AgentReferenceSchema>;
 export type DiscordChat = z.infer<typeof DiscordChatSchema>;
 export type Chat = z.infer<typeof ChatSchema>;
