@@ -1,0 +1,65 @@
+# BragDoc Software Developer Agent
+#
+# This agent demonstrates running herdctl inside an existing Claude Code project.
+# It points at the BragDoc codebase and inherits all of its CLAUDE.md instructions,
+# skills, agents, and commands.
+#
+# To test this example:
+# 1. Create a Discord bot at https://discord.com/developers/applications
+# 2. Set BRAGDOC_DISCORD_BOT_TOKEN environment variable
+# 3. Run: cd examples/bragdoc-developer && herdctl start
+# 4. Message your bot on Discord and ask questions about the codebase
+
+name: bragdoc-developer
+description: Software developer agent for the BragDoc project
+
+# Point at an existing Claude Code project - this is the key configuration!
+# The agent will run as if you typed `claude` in this directory.
+# CLAUDE.md, skills, agents, commands, and MCP servers are all available.
+workspace: /Users/ed/Code/brag-ai
+
+# Load settings from user's global config and the project
+setting_sources:
+  - user     # Global plugins and settings from ~/.claude/
+  - project  # BragDoc's .claude/ directory (CLAUDE.md, skills, commands)
+
+# Default prompt when triggered manually via `herdctl trigger bragdoc-developer`
+default_prompt: |
+  You are the BragDoc software developer agent. You have full access to the
+  BragDoc codebase and can answer questions, make changes, and run commands.
+
+  What would you like me to help with today?
+
+# Chat interface - talk to this agent via Discord
+# Uncomment to enable Discord chat:
+chat:
+  discord:
+    bot_token_env: BRAGDOC_DEV_DISCORD_BOT_TOKEN
+    guilds:
+      - id: "${DISCORD_GUILD_ID}"
+        channels:
+          - id: "${DISCORD_CHANNEL_ID}"
+            name: "#price-alerts"
+            mode: mention
+            context_messages: 10
+    dm:
+      enabled: true
+      mode: auto
+
+
+# Session configuration for conversation continuity
+session:
+  enabled: true
+  persistence: agent  # One session per agent (vs per-schedule or per-job)
+
+# Permissions - this agent has full access to the codebase
+permissions:
+  mode: bypassPermissions
+  allowed_tools:
+    - Read
+    - Write
+    - Edit
+    - Glob
+    - Grep
+    - Bash
+    - WebFetch

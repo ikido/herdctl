@@ -474,6 +474,16 @@ export const AgentConfigSchema = z
     permission_mode: PermissionModeSchema.optional(),
     /** Path to metadata JSON file written by agent (default: metadata.json in workspace) */
     metadata_file: z.string().optional(),
+    /**
+     * Setting sources for Claude SDK configuration discovery.
+     * Controls where Claude looks for CLAUDE.md, skills, commands, etc.
+     * - "user" - reads from ~/.claude/ (global user settings, plugins)
+     * - "project" - reads from .claude/ in the workspace directory
+     * - "local" - reads from .claude/settings.local.json (project-local overrides)
+     *
+     * Default: ["project"] when workspace is set, [] otherwise
+     */
+    setting_sources: z.array(z.enum(["user", "project", "local"])).optional(),
   })
   .strict();
 

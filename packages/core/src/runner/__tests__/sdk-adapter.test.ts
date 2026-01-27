@@ -190,11 +190,43 @@ describe("toSDKOptions", () => {
   });
 
   describe("setting sources", () => {
-    it("sets settingSources to empty by default (autonomous agents should not load project settings)", () => {
+    it("sets settingSources to empty for standalone agents (no workspace)", () => {
       const agent = createTestAgent();
       const result = toSDKOptions(agent);
-      // Empty by default - autonomous agents should NOT load CLAUDE.md or local settings
+      // Empty by default - standalone agents should NOT load CLAUDE.md or local settings
       expect(result.settingSources).toEqual([]);
+    });
+
+    it("sets settingSources to project for project-embedded agents (with workspace)", () => {
+      const agent = createTestAgent({ workspace: "/path/to/existing/project" });
+      const result = toSDKOptions(agent);
+      // Project-embedded agents should load project settings (CLAUDE.md, skills, etc.)
+      expect(result.settingSources).toEqual(["project"]);
+    });
+
+    it("uses explicit setting_sources when configured", () => {
+      const agent = createTestAgent({
+        setting_sources: ["project", "local"],
+      });
+      const result = toSDKOptions(agent);
+      expect(result.settingSources).toEqual(["project", "local"]);
+    });
+
+    it("explicit setting_sources overrides workspace default", () => {
+      const agent = createTestAgent({
+        workspace: "/path/to/project",
+        setting_sources: [], // Explicitly disable settings discovery
+      });
+      const result = toSDKOptions(agent);
+      expect(result.settingSources).toEqual([]);
+    });
+
+    it("explicit setting_sources can add local to standalone agent", () => {
+      const agent = createTestAgent({
+        setting_sources: ["local"], // No workspace, but load user's local settings
+      });
+      const result = toSDKOptions(agent);
+      expect(result.settingSources).toEqual(["local"]);
     });
   });
 
