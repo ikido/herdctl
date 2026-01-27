@@ -6,6 +6,28 @@ fleet:
 
 # Reference agents from sibling example directories
 # This demonstrates composing a fleet from existing agent configs
+# with per-agent overrides to customize behavior for this fleet
 agents:
   - path: ../hurricane-watcher/agents/hurricane-watcher.yaml
+    overrides:
+      # Check more frequently in this fleet
+      schedules:
+        check:
+          interval: 2h
+
   - path: ../price-checker/agents/price-checker.yaml
+    overrides:
+      # Check more frequently and disable Discord hooks for this fleet
+      schedules:
+        check:
+          interval: 1h
+      hooks:
+        after_run:
+          - type: shell
+            name: "Check notification status"
+            command: |
+              if jq -e '.metadata.shouldNotify == true' > /dev/null 2>&1; then
+                echo "Deal found - meets target price"
+              else
+                echo "No deal - above target price"
+              fi

@@ -1,25 +1,40 @@
 # Multi-Agent Fleet Example
 
-This example demonstrates running multiple agents in a single fleet by composing existing agent configurations from other examples.
+This example demonstrates running multiple agents in a single fleet by composing existing agent configurations from other examples, with per-agent overrides.
 
 ## What's Included
 
 This fleet combines:
-- **hurricane-watcher** - Monitors Atlantic hurricane activity every 6 hours
-- **price-checker** - Monitors office chair prices every 4 hours
+- **hurricane-watcher** - Monitors Atlantic hurricane activity (overridden to 2h instead of 6h)
+- **price-checker** - Monitors office chair prices (overridden to 1h instead of 4h, Discord hooks disabled)
 
-## Key Concept: Composable Agent Configs
+## Key Concept: Composable Agent Configs with Overrides
 
-The `herdctl.yaml` references agent configs from sibling directories:
+The `herdctl.yaml` references agent configs from sibling directories and applies per-agent overrides:
 
 ```yaml
 agents:
   - path: ../hurricane-watcher/agents/hurricane-watcher.yaml
+    overrides:
+      schedules:
+        check:
+          interval: 2h  # Override the default 6h
+
   - path: ../price-checker/agents/price-checker.yaml
+    overrides:
+      schedules:
+        check:
+          interval: 1h  # Override the default 4h
+      hooks:
+        after_run:
+          - type: shell
+            command: "echo 'Custom hook'"  # Replace all hooks
 ```
 
 This pattern lets you:
 - Reuse existing agent definitions
+- Customize behavior per-fleet without modifying the original agent
+- Override schedules, hooks, permissions, or any other config
 - Build fleets by composition
 - Keep agent configs in dedicated directories with their own context files
 

@@ -22,7 +22,7 @@ import {
   type AgentConfig,
 } from "./schema.js";
 import { ConfigError, FileReadError, SchemaValidationError } from "./parser.js";
-import { mergeAgentConfig, type ExtendedDefaults } from "./merge.js";
+import { mergeAgentConfig, deepMerge, type ExtendedDefaults } from "./merge.js";
 import { interpolateConfig, type InterpolateOptions } from "./interpolate.js";
 
 // =============================================================================
@@ -464,6 +464,14 @@ export async function loadConfig(
         fleetConfig.defaults as ExtendedDefaults,
         agentConfig
       );
+    }
+
+    // Apply per-agent overrides from the fleet config
+    if (agentRef.overrides) {
+      agentConfig = deepMerge(
+        agentConfig as Record<string, unknown>,
+        agentRef.overrides as Record<string, unknown>
+      ) as AgentConfig;
     }
 
     agents.push({
