@@ -381,6 +381,7 @@ describe("DiscordMessageEvent type", () => {
       reply: async (content: string) => {
         console.log("Reply:", content);
       },
+      startTyping: () => () => {},
     };
 
     expect(event.agentName).toBe("test-agent");
@@ -408,6 +409,7 @@ describe("DiscordMessageEvent type", () => {
         mode: "auto",
       },
       reply: async () => {},
+      startTyping: () => () => {},
     };
 
     expect(event.metadata.guildId).toBeNull();
@@ -813,6 +815,7 @@ describe("DiscordManager message handling", () => {
           mode: "mention",
         },
         reply: replyMock,
+        startTyping: () => () => {},
       };
 
       // Emit the message event
@@ -939,6 +942,7 @@ describe("DiscordManager message handling", () => {
           mode: "mention",
         },
         reply: replyMock,
+        startTyping: () => () => {},
       };
 
       // Emit the message event
@@ -1056,6 +1060,7 @@ describe("DiscordManager message handling", () => {
           mode: "mention",
         },
         reply: replyMock,
+        startTyping: () => () => {},
       };
 
       // Emit the message event
@@ -1154,6 +1159,7 @@ describe("DiscordManager message handling", () => {
           mode: "mention",
         },
         reply: replyMock,
+        startTyping: () => () => {},
       };
 
       // Emit the message event - this will trigger handleMessage which will fail
@@ -1269,6 +1275,7 @@ describe("DiscordManager message handling", () => {
           mode: "mention",
         },
         reply: replyMock,
+        startTyping: () => () => {},
       };
 
       // Emit the message event
@@ -1343,6 +1350,7 @@ describe("DiscordManager message handling", () => {
           mode: "mention",
         },
         reply: replyMock,
+        startTyping: () => () => {},
       };
 
       // Emit the message event
@@ -1411,6 +1419,7 @@ describe("DiscordManager message handling", () => {
           mode: "mention",
         },
         reply: replyMock,
+        startTyping: () => () => {},
       };
 
       // Emit the message event
@@ -1675,6 +1684,7 @@ describe("DiscordManager session integration", () => {
         mode: "mention",
       },
       reply: replyMock,
+      startTyping: () => () => {},
     };
 
     // Emit the message event
@@ -1740,6 +1750,7 @@ describe("DiscordManager session integration", () => {
         mode: "mention",
       },
       reply: replyMock,
+      startTyping: () => () => {},
     };
 
     // Emit the message event
@@ -1807,6 +1818,7 @@ describe("DiscordManager session integration", () => {
         mode: "mention",
       },
       reply: replyMock,
+      startTyping: () => () => {},
     };
 
     // Emit the message event
@@ -1878,6 +1890,7 @@ describe("DiscordManager session integration", () => {
         mode: "mention",
       },
       reply: replyMock,
+      startTyping: () => () => {},
     };
 
     // Emit the message event
@@ -2296,6 +2309,7 @@ describe("DiscordManager lifecycle", () => {
         mode: "mention",
       },
       reply: replyMock,
+      startTyping: () => () => {},
     };
 
     // Emit the message event
@@ -2420,6 +2434,7 @@ describe("DiscordManager lifecycle", () => {
         mode: "mention",
       },
       reply: replyMock,
+      startTyping: () => () => {},
     };
 
     // Emit the message event
@@ -2601,6 +2616,7 @@ describe("DiscordManager lifecycle", () => {
         mode: "mention",
       },
       reply: replyMock,
+      startTyping: () => () => {},
     };
 
     // Emit the message event
@@ -2719,6 +2735,7 @@ describe("DiscordManager lifecycle", () => {
         mode: "mention",
       },
       reply: replyMock,
+      startTyping: () => () => {},
     };
 
     // Emit the message event

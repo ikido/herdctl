@@ -684,6 +684,33 @@ export class DiscordConnector
       });
     };
 
+    // Create typing indicator function
+    // Returns a stop function that should be called when done
+    const startTyping = (): (() => void) => {
+      const textChannel = channel as TextChannel | DMChannel | NewsChannel | ThreadChannel;
+      let typingInterval: ReturnType<typeof setInterval> | null = null;
+
+      // Send initial typing indicator
+      textChannel.sendTyping().catch((err) => {
+        this._logger.debug("Failed to send typing indicator", { error: err.message });
+      });
+
+      // Refresh typing every 8 seconds (indicator lasts ~10 seconds)
+      typingInterval = setInterval(() => {
+        textChannel.sendTyping().catch((err) => {
+          this._logger.debug("Failed to refresh typing indicator", { error: err.message });
+        });
+      }, 8000);
+
+      // Return stop function
+      return () => {
+        if (typingInterval) {
+          clearInterval(typingInterval);
+          typingInterval = null;
+        }
+      };
+    };
+
     // Emit message event
     const payload: DiscordConnectorEventMap["message"] = {
       agentName: this.agentName,
@@ -699,6 +726,7 @@ export class DiscordConnector
         mode,
       },
       reply,
+      startTyping,
     };
     this.emit("message", payload);
   }

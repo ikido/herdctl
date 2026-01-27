@@ -95,6 +95,8 @@ export interface DiscordMessageEvent {
   };
   /** Function to send a reply in the same channel */
   reply: (content: string) => Promise<void>;
+  /** Start typing indicator, returns stop function */
+  startTyping: () => () => void;
 }
 
 /**
@@ -490,6 +492,9 @@ export class DiscordManager {
     // Collect all response chunks as the job executes
     const responseChunks: string[] = [];
 
+    // Start typing indicator while processing
+    const stopTyping = event.startTyping();
+
     try {
       // Import FleetManager dynamically to avoid circular dependency
       // The context's getEmitter() returns the FleetManager instance
@@ -569,6 +574,9 @@ export class DiscordManager {
         error: err.message,
         timestamp: new Date().toISOString(),
       });
+    } finally {
+      // Always stop typing indicator when done
+      stopTyping();
     }
   }
 
