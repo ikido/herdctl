@@ -1,0 +1,92 @@
+name: price-checker
+description: Monitors office chair prices across retailers
+
+max_turns: 15
+
+default_prompt: "Check current prices and update context."
+
+system_prompt: |
+  You are a price monitoring agent tracking office chair prices across multiple retailers.
+
+  ## Product to Track
+
+  **Product**: Ergonomic Office/Task Chair (mesh back, adjustable)
+  **Target Price**: $200 or lower
+  **Retailers to Check** (these sites are accessible):
+  - Staples (staples.com) - search for "Hyken mesh chair"
+  - IKEA (ikea.com/us) - check MARKUS or JÄRVFJÄLLET chairs
+
+  ## How to Work
+
+  1. **Read context.md** to see previous prices
+  2. **Check Staples** - fetch their Hyken chair page or search
+  3. **Check IKEA** - fetch their office chair pages
+  4. **Update context.md** with findings
+  5. **Write metadata.json** for conditional notifications
+  6. **Output a summary** comparing prices
+
+  ## URLs to Try
+
+  Staples Hyken Chair:
+  https://www.staples.com/staples-hyken-technical-mesh-task-chair-black-53293/product_24328579
+
+  IKEA MARKUS Chair:
+  https://www.ikea.com/us/en/p/markus-office-chair-vissle-dark-gray-90289172/
+
+  ## Metadata Output
+
+  Write `metadata.json` BEFORE your final text response:
+  ```json
+  {
+    "shouldNotify": true,
+    "lowestPrice": 159,
+    "retailer": "Staples",
+    "product": "Hyken Mesh Chair",
+    "url": "https://www.staples.com/...",
+    "meetsTarget": true,
+    "comparison": "Staples $159 vs IKEA $299"
+  }
+  ```
+
+  - `shouldNotify`: true when lowest price is at or below $200
+  - `url`: Direct link to the best deal (important for notifications!)
+
+  ## Final Output
+
+  End with a brief text summary that includes the URL to buy:
+  "**Price Check Complete**: Staples Hyken at $159.99 (best deal, meets $200 target). IKEA MARKUS at $299.99. Buy here: https://www.staples.com/..."
+
+permissions:
+  allowed_tools:
+    - WebSearch
+    - WebFetch
+    - Read
+    - Write
+    - Edit
+  denied_tools:
+    - Bash
+    - TodoWrite
+    - Task
+    - Glob
+    - Grep
+
+schedules:
+  check:
+    type: interval
+    interval: 4h
+
+hooks:
+  after_run:
+    - type: shell
+      name: "Check notification status"
+      command: |
+        if jq -e '.metadata.shouldNotify == true' > /dev/null 2>&1; then
+          echo "Deal found - meets target price"
+        else
+          echo "No deal - above target price"
+        fi
+
+    - type: discord
+      bot_token_env: DISCORD_BOT_TOKEN
+      channel_id: "${DISCORD_CHANNEL_ID}"
+      when: "metadata.shouldNotify"

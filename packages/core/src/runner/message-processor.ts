@@ -43,25 +43,45 @@ function safeBoolean(value: unknown): boolean | undefined {
 
 /**
  * Check if a value is a valid SDK message type
+ *
+ * The Claude Agent SDK sends these message types:
+ * - assistant: Complete assistant message with nested APIAssistantMessage
+ * - stream_event: Partial streaming content (contains RawMessageStreamEvent)
+ * - result: Final result message with summary
+ * - system: System messages (init, status, compact_boundary, etc.)
+ * - user: User messages with nested APIUserMessage
+ * - tool_progress: Progress updates for long-running tools
+ * - auth_status: Authentication status updates
+ *
+ * Legacy types (for backwards compatibility):
+ * - tool_use: Tool invocation (now part of assistant content blocks)
+ * - tool_result: Tool result (now part of user messages)
  */
 function isValidMessageType(
   type: unknown
 ): type is
   | "system"
   | "assistant"
-  | "tool_use"
-  | "tool_result"
+  | "stream_event"
   | "result"
   | "user"
-  | "error" {
+  | "tool_progress"
+  | "auth_status"
+  | "error"
+  | "tool_use"
+  | "tool_result" {
   return (
     type === "system" ||
     type === "assistant" ||
-    type === "tool_use" ||
-    type === "tool_result" ||
+    type === "stream_event" ||
     type === "result" ||
     type === "user" ||
-    type === "error"
+    type === "tool_progress" ||
+    type === "auth_status" ||
+    type === "error" ||
+    // Legacy types for backwards compatibility
+    type === "tool_use" ||
+    type === "tool_result"
   );
 }
 
@@ -100,27 +120,77 @@ function processSystemMessage(message: SDKMessage): ProcessedMessage {
 }
 
 /**
+ * Extract text content from Anthropic API content blocks
+ *
+ * The API returns content as an array of content blocks, where text content
+ * has type: 'text' with a text field.
+ */
+function extractTextFromContentBlocks(content: unknown): string | undefined {
+  // Handle null/undefined
+  if (content === null || content === undefined) return undefined;
+
+  // If it's a string (including empty string), return directly
+  if (typeof content === "string") {
+    return content;
+  }
+
+  // If it's an array of content blocks, extract text blocks
+  if (Array.isArray(content)) {
+    const textParts: string[] = [];
+    for (const block of content) {
+      if (block && typeof block === "object" && "type" in block) {
+        if (block.type === "text" && "text" in block && typeof block.text === "string") {
+          textParts.push(block.text);
+        }
+      }
+    }
+    return textParts.length > 0 ? textParts.join("\n") : undefined;
+  }
+
+  return undefined;
+}
+
+/**
  * Process an assistant message from the SDK
+ *
+ * SDK assistant messages have the content nested inside a `message` field
+ * which is an Anthropic APIAssistantMessage with content blocks.
  */
 function processAssistantMessage(message: SDKMessage): ProcessedMessage {
   const output: JobOutputInput = {
     type: "assistant",
   };
 
-  if (message.content !== undefined) {
-    output.content = message.content;
+  // SDK wraps the API message in a `message` field
+  // Structure: { type: 'assistant', message: { content: [...], ... }, ... }
+  const apiMessage = message.message as { content?: unknown; usage?: unknown } | undefined;
+
+  if (apiMessage?.content !== undefined) {
+    const textContent = extractTextFromContentBlocks(apiMessage.content);
+    if (textContent) {
+      output.content = textContent;
+    }
+  }
+
+  // Also check top-level content for backwards compatibility
+  if (output.content === undefined && message.content !== undefined) {
+    const textContent = extractTextFromContentBlocks(message.content);
+    if (textContent !== undefined) {
+      output.content = textContent;
+    }
   }
 
   if (message.partial !== undefined) {
     output.partial = message.partial as boolean;
   }
 
-  // Handle usage statistics
-  if (message.usage) {
-    const usage = message.usage as {
-      input_tokens?: number;
-      output_tokens?: number;
-    };
+  // Handle usage statistics (can be at top level or in nested message)
+  const usage = (apiMessage?.usage ?? message.usage) as {
+    input_tokens?: number;
+    output_tokens?: number;
+  } | undefined;
+
+  if (usage) {
     output.usage = {};
     if (usage.input_tokens !== undefined) {
       output.usage.input_tokens = usage.input_tokens;
@@ -134,10 +204,9 @@ function processAssistantMessage(message: SDKMessage): ProcessedMessage {
 }
 
 /**
- * Process a tool use message from the SDK
+ * Process a tool use message (legacy type for backwards compatibility)
  */
 function processToolUseMessage(message: SDKMessage): ProcessedMessage {
-  // Tool name is required - try multiple possible field names
   const toolName = message.tool_name ?? message.name ?? "unknown";
 
   const output: JobOutputInput = {
@@ -157,7 +226,7 @@ function processToolUseMessage(message: SDKMessage): ProcessedMessage {
 }
 
 /**
- * Process a tool result message from the SDK
+ * Process a tool result message (legacy type for backwards compatibility)
  */
 function processToolResultMessage(message: SDKMessage): ProcessedMessage {
   const output: JobOutputInput = {
@@ -209,20 +278,128 @@ function processErrorMessage(message: SDKMessage): ProcessedMessage {
 /**
  * Process a user message from the SDK
  *
- * User messages represent the input prompt. We log them as system messages
- * with subtype "user_input" for traceability.
+ * SDK user messages have the content nested inside a `message` field
+ * which is an Anthropic APIUserMessage. User messages often contain
+ * tool results (responses to assistant tool use).
+ *
+ * We log them as system messages with subtype "user_input" for traceability,
+ * but also extract tool_use_result if present.
  */
 function processUserMessage(message: SDKMessage): ProcessedMessage {
+  // Check if this is a tool result response
+  const toolUseResult = message.tool_use_result;
+  if (toolUseResult !== undefined) {
+    const output: JobOutputInput = {
+      type: "tool_result",
+      success: true,
+    };
+
+    // Extract the result content
+    if (typeof toolUseResult === "string") {
+      output.result = toolUseResult;
+    } else if (toolUseResult && typeof toolUseResult === "object") {
+      // Try to extract meaningful content from the result object
+      const resultObj = toolUseResult as Record<string, unknown>;
+      if ("content" in resultObj) {
+        output.result = extractTextFromContentBlocks(resultObj.content) ?? JSON.stringify(toolUseResult, null, 2);
+      } else {
+        output.result = JSON.stringify(toolUseResult, null, 2);
+      }
+    }
+
+    return { output };
+  }
+
+  // Regular user input message
   const output: JobOutputInput = {
     type: "system",
     subtype: "user_input",
   };
 
-  if (message.content !== undefined) {
-    output.content =
-      typeof message.content === "string"
-        ? message.content
-        : JSON.stringify(message.content);
+  // SDK wraps the API message in a `message` field
+  const apiMessage = message.message as { content?: unknown } | undefined;
+  const content = apiMessage?.content ?? message.content;
+
+  if (content !== undefined) {
+    const textContent = extractTextFromContentBlocks(content);
+    output.content = textContent ?? (typeof content === "string" ? content : JSON.stringify(content));
+  }
+
+  return { output };
+}
+
+/**
+ * Process a stream_event message from the SDK
+ *
+ * Stream events contain partial content as messages are being generated.
+ * The event field contains a RawMessageStreamEvent from the Anthropic API.
+ */
+function processStreamEventMessage(message: SDKMessage): ProcessedMessage {
+  const output: JobOutputInput = {
+    type: "assistant",
+    partial: true,
+  };
+
+  // Extract the streaming event
+  const event = message.event as {
+    type?: string;
+    delta?: { type?: string; text?: string };
+    content_block?: { type?: string; text?: string };
+  } | undefined;
+
+  if (event) {
+    // Handle content_block_delta events (streaming text)
+    if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+      output.content = event.delta.text;
+    }
+    // Handle content_block_start events
+    else if (event.type === "content_block_start" && event.content_block?.type === "text") {
+      output.content = event.content_block.text;
+    }
+  }
+
+  return { output };
+}
+
+/**
+ * Process a tool_progress message from the SDK
+ *
+ * Tool progress messages indicate that a long-running tool is still executing.
+ */
+function processToolProgressMessage(message: SDKMessage): ProcessedMessage {
+  const output: JobOutputInput = {
+    type: "system",
+    subtype: "tool_progress",
+  };
+
+  if (message.tool_name) {
+    output.content = `Tool ${message.tool_name} in progress`;
+  }
+
+  return { output };
+}
+
+/**
+ * Process an auth_status message from the SDK
+ *
+ * Auth status messages indicate authentication state changes.
+ */
+function processAuthStatusMessage(message: SDKMessage): ProcessedMessage {
+  const authMessage = message as {
+    isAuthenticating?: boolean;
+    output?: string[];
+    error?: string;
+  };
+
+  const output: JobOutputInput = {
+    type: "system",
+    subtype: "auth_status",
+  };
+
+  if (authMessage.error) {
+    output.content = `Authentication error: ${authMessage.error}`;
+  } else if (authMessage.output && authMessage.output.length > 0) {
+    output.content = authMessage.output.join("\n");
   }
 
   return { output };
@@ -231,31 +408,33 @@ function processUserMessage(message: SDKMessage): ProcessedMessage {
 /**
  * Process a result message from the SDK
  *
- * Result messages are an alternative format for tool results.
- * We normalize them to our standard tool_result format.
+ * SDK result messages indicate the completion of a query and contain
+ * summary information, usage statistics, and the final result.
  */
 function processResultMessage(message: SDKMessage): ProcessedMessage {
-  const output: JobOutputInput = {
-    type: "tool_result",
+  const resultMsg = message as {
+    subtype?: string;
+    result?: string;
+    is_error?: boolean;
+    errors?: string[];
+    total_cost_usd?: number;
+    num_turns?: number;
+    duration_ms?: number;
   };
 
-  if (message.tool_use_id) {
-    output.tool_use_id = message.tool_use_id;
-  }
+  // Determine if this is an error result
+  const isError = resultMsg.is_error || (resultMsg.subtype && resultMsg.subtype !== "success");
 
-  // Result messages may have the result in different fields
-  if (message.result !== undefined) {
-    output.result = message.result;
-  } else if (message.content !== undefined) {
-    output.result = message.content;
-  }
+  const output: JobOutputInput = {
+    type: "tool_result",
+    success: !isError,
+  };
 
-  if (message.success !== undefined) {
-    output.success = message.success as boolean;
-  }
-
-  if (message.error !== undefined) {
-    output.error = message.error as string;
+  // Extract the result content
+  if (resultMsg.result !== undefined) {
+    output.result = resultMsg.result;
+  } else if (resultMsg.errors && resultMsg.errors.length > 0) {
+    output.error = resultMsg.errors.join("; ");
   }
 
   return { output };
@@ -329,11 +508,8 @@ export function processSDKMessage(message: SDKMessage): ProcessedMessage {
     case "assistant":
       return processAssistantMessage(message);
 
-    case "tool_use":
-      return processToolUseMessage(message);
-
-    case "tool_result":
-      return processToolResultMessage(message);
+    case "stream_event":
+      return processStreamEventMessage(message);
 
     case "result":
       return processResultMessage(message);
@@ -341,13 +517,29 @@ export function processSDKMessage(message: SDKMessage): ProcessedMessage {
     case "user":
       return processUserMessage(message);
 
+    case "tool_progress":
+      return processToolProgressMessage(message);
+
+    case "auth_status":
+      return processAuthStatusMessage(message);
+
     case "error":
       return processErrorMessage(message);
+
+    // Legacy types for backwards compatibility with tests
+    case "tool_use":
+      return processToolUseMessage(message);
+
+    case "tool_result":
+      return processToolResultMessage(message);
   }
 }
 
 /**
  * Check if a message indicates the end of execution
+ *
+ * The SDK signals completion via a 'result' message type, which contains
+ * the final summary and usage statistics.
  *
  * @param message - The SDK message to check
  * @returns true if this is a terminal message
@@ -360,6 +552,11 @@ export function isTerminalMessage(message: SDKMessage): boolean {
 
   // Error messages are terminal
   if (message.type === "error") {
+    return true;
+  }
+
+  // Result messages indicate query completion
+  if (message.type === "result") {
     return true;
   }
 
@@ -396,7 +593,8 @@ function truncateSummary(text: string): string {
  *
  * Looks for summaries in the following order:
  * 1. Explicit `summary` field on the message (truncated to 500 chars)
- * 2. Short assistant message content (≤500 chars, non-partial)
+ * 2. Result message with `result` field (SDK final result)
+ * 3. Short assistant message content (≤500 chars, non-partial)
  *
  * @param message - The SDK message to extract summary from
  * @returns Summary string if present, undefined otherwise
@@ -413,11 +611,22 @@ export function extractSummary(message: SDKMessage): string | undefined {
     return truncateSummary(summaryStr);
   }
 
-  // For assistant messages, use content as potential summary
-  if (message.type === "assistant" && message.content && !message.partial) {
-    // Only use if it looks like a conclusion (short enough)
-    if (message.content.length <= MAX_SUMMARY_LENGTH) {
-      return message.content;
+  // For result messages, use the result field as summary
+  if (message.type === "result") {
+    const resultMsg = message as { result?: string };
+    if (resultMsg.result) {
+      return truncateSummary(resultMsg.result);
+    }
+  }
+
+  // For assistant messages, try to extract content from nested message
+  if (message.type === "assistant" && !message.partial) {
+    const apiMessage = message.message as { content?: unknown } | undefined;
+    const content = apiMessage?.content ?? message.content;
+    const textContent = extractTextFromContentBlocks(content);
+
+    if (textContent && textContent.length <= MAX_SUMMARY_LENGTH) {
+      return textContent;
     }
   }
 

@@ -18,6 +18,7 @@ import {
   isConcurrencyLimitError,
   type TriggerResult,
   type LogEntry,
+  type SDKMessage,
 } from "@herdctl/core";
 
 export interface TriggerOptions {
@@ -27,7 +28,14 @@ export interface TriggerOptions {
   json?: boolean;
   state?: string;
   config?: string;
+  /** Suppress the default output display */
+  quiet?: boolean;
 }
+
+/**
+ * Maximum characters to display for agent output
+ */
+const MAX_OUTPUT_CHARS = 20000;
 
 /**
  * Default state directory
@@ -95,6 +103,66 @@ function formatLogEntry(entry: LogEntry): string {
   const message = entry.message;
 
   return `${timestamp} ${message}`;
+}
+
+/**
+ * Extract text content from SDK message content blocks
+ */
+function extractContent(message: SDKMessage): string | undefined {
+  // Check for nested message content (SDK structure)
+  const apiMessage = message.message as { content?: unknown } | undefined;
+  const content = apiMessage?.content ?? message.content;
+
+  if (!content) return undefined;
+
+  // If it's a string, return directly
+  if (typeof content === "string") {
+    return content;
+  }
+
+  // If it's an array of content blocks, extract text
+  if (Array.isArray(content)) {
+    const textParts: string[] = [];
+    for (const block of content) {
+      if (block && typeof block === "object" && "type" in block) {
+        if (block.type === "text" && "text" in block && typeof block.text === "string") {
+          textParts.push(block.text);
+        }
+      }
+    }
+    return textParts.length > 0 ? textParts.join("") : undefined;
+  }
+
+  return undefined;
+}
+
+/**
+ * Format an SDK message for streaming output
+ *
+ * Only streams assistant messages - result messages are skipped since
+ * they contain the same content that was already streamed via assistant messages.
+ */
+function formatStreamingMessage(message: SDKMessage, isJson: boolean): string | null {
+  if (isJson) {
+    // In JSON mode, include all meaningful messages
+    if (message.type === "assistant" || message.type === "result") {
+      return JSON.stringify({ type: "message", data: message });
+    }
+    return null;
+  }
+
+  // Handle assistant messages with content
+  if (message.type === "assistant") {
+    const content = extractContent(message);
+    if (content) {
+      return content;
+    }
+    return null; // Skip empty assistant messages
+  }
+
+  // Skip result messages - they duplicate assistant content
+  // Skip other message types for cleaner output
+  return null;
 }
 
 /**
@@ -173,11 +241,38 @@ export async function triggerCommand(
     // Initialize to load configuration
     await manager.initialize();
 
+    // Track if we've printed any streaming content
+    let hasStreamedContent = false;
+    let streamBuffer = ""; // Buffer for accumulating partial content
+
+    /**
+     * Callback for streaming messages during execution
+     */
+    const onMessage = (message: SDKMessage): void => {
+      if (isJsonOutput) {
+        // In JSON mode, output each message as JSON
+        const formatted = formatStreamingMessage(message, true);
+        if (formatted) {
+          console.log(formatted);
+          hasStreamedContent = true;
+        }
+      } else if (!options.quiet) {
+        // In normal mode, stream assistant content
+        const formatted = formatStreamingMessage(message, false);
+        if (formatted) {
+          // Print the content with a newline for clean output
+          console.log(formatted);
+          hasStreamedContent = true;
+        }
+      }
+    };
+
     // Trigger the agent
     let result: TriggerResult;
     try {
       result = await manager.trigger(agentName, options.schedule, {
         prompt: options.prompt,
+        onMessage,
       });
     } catch (error) {
       // Handle specific trigger errors
@@ -246,7 +341,13 @@ export async function triggerCommand(
       throw error;
     }
 
-    // Show job ID immediately
+    // Add newline after streamed content if we printed anything
+    if (hasStreamedContent && !isJsonOutput) {
+      console.log(""); // Ensure we're on a new line after streaming
+      console.log("");
+    }
+
+    // Show job info
     if (isJsonOutput) {
       const output: TriggerResultJson = {
         success: true,
@@ -260,8 +361,7 @@ export async function triggerCommand(
       };
       console.log(JSON.stringify(output));
     } else {
-      console.log("");
-      console.log(colorize("Job triggered successfully", "green"));
+      console.log(colorize("Job completed", "green"));
       console.log(`Job ID:   ${colorize(result.jobId, "cyan")}`);
       console.log(`Agent:    ${result.agentName}`);
       if (result.scheduleName) {
@@ -277,11 +377,28 @@ export async function triggerCommand(
       console.log("");
     }
 
+    // Display final output only if we didn't stream anything (fallback)
+    if (!isJsonOutput && options.quiet !== true && !hasStreamedContent) {
+      const finalOutput = await manager.getJobFinalOutput(result.jobId);
+      if (finalOutput) {
+        console.log(colorize("─".repeat(60), "dim"));
+        if (finalOutput.length > MAX_OUTPUT_CHARS) {
+          const remaining = finalOutput.length - MAX_OUTPUT_CHARS;
+          console.log(finalOutput.substring(0, MAX_OUTPUT_CHARS));
+          console.log("");
+          console.log(colorize(`... [truncated: ${remaining.toLocaleString()} more characters]`, "yellow"));
+        } else {
+          console.log(finalOutput);
+        }
+        console.log(colorize("─".repeat(60), "dim"));
+        console.log("");
+      }
+    }
+
     // If not wait mode, we're done
     if (!isWaitMode) {
       if (!isJsonOutput) {
-        console.log(`Run 'herdctl logs --job ${result.jobId}' to view output.`);
-        console.log(`Run 'herdctl trigger ${agentName} --wait' to wait for completion.`);
+        console.log(`Run 'herdctl logs --job ${result.jobId}' to view detailed logs.`);
       }
       return;
     }

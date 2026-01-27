@@ -71,8 +71,10 @@ permission_mode: acceptEdits
 | `repo` | string | No | GitHub repository (e.g., `owner/repo`) |
 | `identity` | object | No | Agent identity configuration |
 | `system_prompt` | string | No | Custom system instructions for Claude |
+| `default_prompt` | string | No | Default prompt when triggered without `--prompt` |
 | `work_source` | object | No | Where the agent gets tasks |
 | `schedules` | object | No | Map of named schedule configurations |
+| `hooks` | object | No | Post-job actions (notifications, webhooks) |
 | `instances` | object | No | Concurrency and instance settings |
 | `session` | object | No | Session runtime settings |
 | `permissions` | object | No | Permission controls |
@@ -82,6 +84,7 @@ permission_mode: acceptEdits
 | `model` | string | No | Claude model to use |
 | `max_turns` | integer | No | Maximum conversation turns |
 | `permission_mode` | string | No | Quick permission mode setting |
+| `metadata_file` | string | No | Path to agent metadata file for hooks |
 
 ---
 
@@ -164,6 +167,24 @@ system_prompt: |
   You are a senior software engineer specializing in TypeScript.
   Always write tests for new code.
   Follow the existing code style.
+```
+
+### default_prompt
+
+Default prompt used when the agent is triggered without an explicit `--prompt` argument.
+
+```yaml
+default_prompt: "Check for new issues and process the oldest one."
+```
+
+This enables simple triggering:
+
+```bash
+# Without default_prompt, you must specify --prompt
+herdctl trigger my-agent --prompt "Do something"
+
+# With default_prompt configured, just run
+herdctl trigger my-agent
 ```
 
 ### work_source
@@ -306,6 +327,86 @@ schedules:
 | `work_source` | object | Override work source for this schedule |
 
 For more details on scheduling, see [Schedules](/concepts/schedules/) and [Triggers](/concepts/triggers/).
+
+### hooks
+
+Configure actions that run after job completion. Use hooks for notifications, logging, triggering downstream systems, or any post-job processing.
+
+```yaml
+hooks:
+  after_run:
+    - type: shell
+      name: "Log output"
+      command: "jq -r '.result.output'"
+
+    - type: discord
+      name: "Notify team"
+      channel_id: "${DISCORD_CHANNEL_ID}"
+      bot_token_env: DISCORD_BOT_TOKEN
+      when: "metadata.shouldNotify"
+
+  on_error:
+    - type: webhook
+      url: "https://alerts.example.com/errors"
+```
+
+#### Hook Events
+
+| Event | Description |
+|-------|-------------|
+| `after_run` | Runs after every job (success or failure) |
+| `on_error` | Runs only when a job fails |
+
+#### Hook Types
+
+| Type | Description |
+|------|-------------|
+| `shell` | Execute a shell command with HookContext on stdin |
+| `webhook` | POST/PUT HookContext JSON to a URL |
+| `discord` | Send formatted notification to Discord channel |
+
+#### Common Hook Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | string | — | **Required.** `shell`, `webhook`, or `discord` |
+| `name` | string | — | Human-readable name for logs |
+| `continue_on_error` | boolean | `true` | Continue if hook fails |
+| `on_events` | array | all | Filter to specific events: `completed`, `failed`, `timeout`, `cancelled` |
+| `when` | string | — | Conditional execution (dot-notation path, e.g., `metadata.shouldNotify`) |
+
+For complete hook documentation, see [Hooks](/concepts/hooks/).
+
+### metadata_file
+
+Path to a JSON file that the agent writes during execution. This metadata is included in hook context and can be used for conditional hook execution.
+
+```yaml
+metadata_file: metadata.json  # Path relative to workspace
+```
+
+**Example workflow:**
+
+1. Configure `metadata_file` in agent config
+2. Agent writes metadata during execution:
+   ```json
+   {
+     "shouldNotify": true,
+     "lowestPrice": 159.99,
+     "retailer": "Staples"
+   }
+   ```
+3. Hooks use `when` to conditionally execute:
+   ```yaml
+   hooks:
+     after_run:
+       - type: discord
+         when: "metadata.shouldNotify"
+         channel_id: "..."
+         bot_token_env: DISCORD_BOT_TOKEN
+   ```
+
+The metadata is also displayed in Discord notification embeds and included in webhook payloads.
 
 ### instances
 
@@ -818,6 +919,7 @@ herdctl validate agents/my-agent.yaml
 - [Fleet Configuration](/configuration/fleet-config/) — Global fleet settings
 - [Permissions](/configuration/permissions/) — Detailed permission controls
 - [MCP Servers](/configuration/mcp-servers/) — MCP server setup
+- [Hooks](/concepts/hooks/) — Post-job actions and notifications
 - [Schedules](/concepts/schedules/) — Schedule concepts and interval timing
 - [Triggers](/concepts/triggers/) — Trigger types and configuration
 - [Work Sources](/concepts/work-sources/) — Task source integration

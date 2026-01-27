@@ -99,6 +99,7 @@ export default defineConfig({
 						{ label: 'Schedules', slug: 'concepts/schedules' },
 						{ label: 'Triggers', slug: 'concepts/triggers' },
 						{ label: 'Jobs', slug: 'concepts/jobs' },
+						{ label: 'Hooks', slug: 'concepts/hooks' },
 						{ label: 'Workspaces', slug: 'concepts/workspaces' },
 						{ label: 'Sessions', slug: 'concepts/sessions' },
 					],
@@ -126,6 +127,8 @@ export default defineConfig({
 					label: 'Guides',
 					collapsed: true,
 					items: [
+						{ label: 'Example Projects', slug: 'guides/examples' },
+						{ label: 'Persistent Memory', slug: 'guides/persistent-memory' },
 						{ label: 'Recipes & Patterns', slug: 'guides/recipes' },
 					],
 				},
@@ -147,7 +150,6 @@ export default defineConfig({
 				{
 					label: 'CLI Reference',
 					slug: 'cli-reference',
-					badge: { text: 'Placeholder', variant: 'caution' },
 				},
 			],
 		}),

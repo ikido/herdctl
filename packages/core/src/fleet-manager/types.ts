@@ -448,6 +448,25 @@ export interface TriggerOptions {
    * Default: false
    */
   bypassConcurrencyLimit?: boolean;
+
+  /**
+   * Callback for receiving messages during execution
+   *
+   * This callback is invoked for each message received from the SDK during
+   * agent execution, enabling real-time streaming of output to the caller.
+   *
+   * @example
+   * ```typescript
+   * await manager.trigger('my-agent', undefined, {
+   *   onMessage: (message) => {
+   *     if (message.type === 'assistant' && message.content) {
+   *       console.log(message.content);
+   *     }
+   *   },
+   * });
+   * ```
+   */
+  onMessage?: (message: import("../runner/types.js").SDKMessage) => void | Promise<void>;
 }
 
 /**

@@ -1,127 +1,281 @@
 ---
 title: CLI Reference
 description: Complete command reference for herdctl
-sidebar:
-  badge:
-    text: Coming Soon
-    variant: caution
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-<Aside type="caution" title="Coming Soon">
-This page is a placeholder. The herdctl CLI is currently under development. The commands listed below represent the planned functionality.
-</Aside>
+The `herdctl` CLI provides commands for managing and interacting with your agent fleet.
 
-## Planned Commands
-
-The following commands are planned for the herdctl CLI:
-
-### Fleet Management
-
-| Command | Description |
-|---------|-------------|
-| `herdctl start [agent]` | Start all agents, or a specific agent |
-| `herdctl stop [agent]` | Stop all agents, or a specific agent |
-| `herdctl restart` | Restart all agents |
-| `herdctl status [agent]` | Show fleet status, or specific agent status |
-
-### Monitoring
-
-| Command | Description |
-|---------|-------------|
-| `herdctl logs [agent]` | View logs for all agents, or a specific agent |
-
-### Manual Operations
-
-| Command | Description |
-|---------|-------------|
-| `herdctl trigger <agent>` | Manually trigger an agent to run |
-
-### Configuration
-
-| Command | Description |
-|---------|-------------|
-| `herdctl config validate` | Validate configuration files |
-
-### Web UI
-
-| Command | Description |
-|---------|-------------|
-| `herdctl web` | Start the local monitoring dashboard |
-
-## Global Options (Planned)
+## Installation
 
 ```bash
-herdctl [command] [options]
+# Install globally
+npm install -g herdctl
 
-Options:
-  -c, --config <path>    Path to config file (default: ./herdctl.yaml)
-  -v, --verbose          Enable verbose output
-  --json                 Output in JSON format
-  --help                 Show help
-  --version              Show version
+# Or use via npx
+npx herdctl [command]
 ```
 
-## Additional Commands (Future)
+## Commands
 
-The following additional commands are planned for future releases:
+### trigger
 
-### Agent Commands
+Manually trigger an agent to run a job.
 
 ```bash
-herdctl agent list                    # List all agents
-herdctl agent status <name>           # Show agent status
-herdctl agent start <name>            # Start specific agent
-herdctl agent stop <name>             # Stop specific agent
-herdctl agent logs <name>             # View agent logs
-herdctl agent resume <name>           # Resume agent session
+herdctl trigger <agent-name> [options]
 ```
 
-### Job Commands
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `agent-name` | Name of the agent to trigger |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-p, --prompt <text>` | Prompt to send to the agent (uses `default_prompt` if not specified) |
+| `-q, --quiet` | Suppress streaming output during execution |
+| `--json` | Output result in JSON format |
+
+**Examples:**
 
 ```bash
-herdctl jobs list                     # List all jobs
-herdctl jobs list --agent <name>      # List jobs for agent
-herdctl jobs show <id>                # Show job details
-herdctl jobs logs <id>                # View job logs
-herdctl jobs cancel <id>              # Cancel running job
-herdctl jobs resume <id>              # Resume job session
+# Trigger with default prompt (if agent has default_prompt configured)
+herdctl trigger price-checker
+
+# Trigger with custom prompt
+herdctl trigger hurricane-watcher --prompt "Check for storms near Miami"
+
+# Quiet mode - no streaming, just final result
+herdctl trigger my-agent -q
+
+# JSON output for scripting
+herdctl trigger my-agent --json
 ```
 
-### Workspace Commands
+**Streaming Output:**
+
+By default, the trigger command streams the agent's output in real-time:
+
+```
+$ herdctl trigger price-checker
+Triggering agent: price-checker
+Job started: job-2024-01-15-abc123
+
+I'll check the current prices for office chairs at Staples and IKEA.
+
+First, let me fetch the Staples Hyken chair page...
+[...]
+
+**Price Check Complete**: Staples Hyken at $159.99 (best deal, meets $200 target).
+IKEA MARKUS at $299.99. Buy here: https://www.staples.com/...
+
+Job completed successfully in 45.2s
+```
+
+**Output Display:**
+
+After job completion, the agent's final output is displayed (truncated at 20,000 characters if needed). Use `--quiet` to suppress this.
+
+**Hooks:**
+
+If the agent has [hooks](/concepts/hooks/) configured, they run after the job completes. Hook execution is logged:
+
+```
+Running hook: Price alert (discord)
+Hook completed: Price alert
+```
+
+### status
+
+Show the status of agents and running jobs.
 
 ```bash
-herdctl workspace list                # List workspaces
-herdctl workspace status <name>       # Show workspace status
-herdctl workspace clean <name>        # Reset workspace
-herdctl workspace remove <name>       # Remove workspace
+herdctl status [agent-name]
 ```
 
-### Configuration Commands
+**Examples:**
 
 ```bash
-herdctl config show                   # Show current config
-herdctl init                          # Initialize new project
+# Show all agents
+herdctl status
+
+# Show specific agent
+herdctl status price-checker
 ```
 
-### Chat Integration
+### logs
+
+View logs for agents or specific jobs.
 
 ```bash
-herdctl discord start                 # Start Discord bot
-herdctl discord status                # Show bot status
+herdctl logs [agent-name] [options]
 ```
 
-## Exit Codes (Planned)
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-f, --follow` | Stream logs in real-time |
+| `--job <id>` | Show logs for specific job |
+| `-n, --lines <count>` | Number of lines to show (default: 100) |
+
+**Examples:**
+
+```bash
+# View recent logs
+herdctl logs price-checker
+
+# Follow logs in real-time
+herdctl logs price-checker -f
+
+# View specific job logs
+herdctl logs --job job-2024-01-15-abc123
+```
+
+### start
+
+Start the fleet daemon to run scheduled jobs.
+
+```bash
+herdctl start [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-d, --daemon` | Run in background |
+| `--agent <name>` | Start specific agent only |
+
+**Examples:**
+
+```bash
+# Start all agents
+herdctl start
+
+# Start in background
+herdctl start -d
+
+# Start specific agent
+herdctl start --agent price-checker
+```
+
+### stop
+
+Stop running agents.
+
+```bash
+herdctl stop [agent-name]
+```
+
+**Examples:**
+
+```bash
+# Stop all agents
+herdctl stop
+
+# Stop specific agent
+herdctl stop price-checker
+```
+
+### validate
+
+Validate configuration files.
+
+```bash
+herdctl validate [path]
+```
+
+**Examples:**
+
+```bash
+# Validate all configuration
+herdctl validate
+
+# Validate specific agent
+herdctl validate agents/my-agent.yaml
+```
+
+### init
+
+Initialize a new herdctl project.
+
+```bash
+herdctl init [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--example <name>` | Start from an example template |
+
+**Examples:**
+
+```bash
+# Initialize in current directory
+herdctl init
+
+# Initialize from example
+herdctl init --example price-checker
+```
+
+## Global Options
+
+These options work with all commands:
+
+| Option | Description |
+|--------|-------------|
+| `-c, --config <path>` | Path to herdctl.yaml (default: `./herdctl.yaml`) |
+| `-v, --verbose` | Enable verbose output |
+| `--version` | Show version number |
+| `--help` | Show help |
+
+## Exit Codes
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success |
-| 1 | General error |
-| 2 | Configuration error |
-| 3 | Agent error |
-| 4 | Job error |
+| `0` | Success |
+| `1` | General error |
+| `2` | Configuration error |
+| `3` | Agent error |
+| `4` | Job error |
 
 ## Environment Variables
 
-See [Environment Variables](/configuration/environment/) for configuration options.
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | **Required.** Claude API key |
+| `HERDCTL_CONFIG` | Path to config file (alternative to `-c`) |
+| `HERDCTL_LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error` |
+
+Additional environment variables may be required for integrations:
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_TOKEN` | GitHub API access for work sources |
+| `DISCORD_BOT_TOKEN` | Discord bot token for notifications/chat |
+| `DISCORD_CHANNEL_ID` | Default Discord channel for notifications |
+
+## Configuration Files
+
+herdctl looks for configuration in this order:
+
+1. Path specified with `-c` / `--config`
+2. `HERDCTL_CONFIG` environment variable
+3. `./herdctl.yaml` in current directory
+4. `./agents/*.yaml` for agent definitions
+
+See [Fleet Configuration](/configuration/fleet-config/) and [Agent Configuration](/configuration/agent-config/) for details.
+
+## Related Pages
+
+- [Getting Started](/getting-started/) — First-time setup guide
+- [Agent Configuration](/configuration/agent-config/) — Agent YAML reference
+- [Hooks](/concepts/hooks/) — Post-job notifications and actions
+- [Triggers](/concepts/triggers/) — How jobs are started

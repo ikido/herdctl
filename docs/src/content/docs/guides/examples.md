@@ -1,0 +1,257 @@
+---
+title: Example Projects
+description: Learn herdctl through working examples
+---
+
+The herdctl repository includes example projects demonstrating various features and patterns. Each example is self-contained and can be run immediately.
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/herdctl/herdctl.git
+cd herdctl
+
+# Install and build
+pnpm install
+pnpm build
+
+# Navigate to an example
+cd examples/hello-world
+
+# Run the agent
+../../packages/cli/bin/herdctl.js trigger hello-world
+```
+
+## Available Examples
+
+### hello-world
+
+**Difficulty:** Beginner
+**Features:** Basic configuration, default_prompt, max_turns
+
+The simplest possible agent—just responds to greetings. Perfect for understanding the minimal configuration required.
+
+```bash
+cd examples/hello-world
+../../packages/cli/bin/herdctl.js trigger hello-world
+```
+
+**What you'll learn:**
+- Minimal agent YAML structure
+- Using `default_prompt` for trigger without `--prompt`
+- Limiting agent behavior with `max_turns`
+- No tools required (pure conversation)
+
+### hurricane-watcher
+
+**Difficulty:** Intermediate
+**Features:** Hooks, persistent memory, denied_tools, schedules
+
+A monitoring agent that tracks weather activity and demonstrates several advanced features:
+
+```bash
+cd examples/hurricane-watcher
+export ANTHROPIC_API_KEY="your-key"
+../../packages/cli/bin/herdctl.js trigger hurricane-watcher
+```
+
+**What you'll learn:**
+- **Persistent memory**: Agent maintains `context.md` file across runs
+- **Shell hooks**: Run commands after job completion
+- **Discord hooks**: Send notifications (requires bot setup)
+- **Tool restrictions**: Using `denied_tools` to prevent certain actions
+- **Schedules**: Configure interval-based execution
+
+**Key configuration:**
+
+```yaml
+# Persistent memory pattern
+system_prompt: |
+  You maintain a context.md file to remember state between runs.
+  At the START: Read context.md
+  At the END: Update context.md with results
+
+# Hooks for post-job processing
+hooks:
+  after_run:
+    - type: shell
+      command: "jq -r '.result.output'"
+```
+
+### price-checker
+
+**Difficulty:** Advanced
+**Features:** Metadata, conditional hooks, web scraping, notifications
+
+A sophisticated agent that monitors product prices and sends conditional notifications:
+
+```bash
+cd examples/price-checker
+export ANTHROPIC_API_KEY="your-key"
+../../packages/cli/bin/herdctl.js trigger price-checker
+```
+
+**What you'll learn:**
+- **Agent metadata**: Writing `metadata.json` for hook conditions
+- **Conditional notifications**: `when: "metadata.shouldNotify"`
+- **Web scraping**: Using WebFetch to get real product data
+- **Discord notifications**: Formatted price alerts with product links
+
+**Key configuration:**
+
+```yaml
+# Agent writes metadata to control hooks
+metadata_file: metadata.json
+
+hooks:
+  after_run:
+    # Only notify when price meets target
+    - type: discord
+      when: "metadata.shouldNotify"
+      channel_id: "${DISCORD_CHANNEL_ID}"
+      bot_token_env: DISCORD_BOT_TOKEN
+```
+
+**Example metadata the agent writes:**
+
+```json
+{
+  "shouldNotify": true,
+  "lowestPrice": 159.99,
+  "retailer": "Staples",
+  "product": "Hyken Mesh Chair",
+  "url": "https://www.staples.com/...",
+  "meetsTarget": true
+}
+```
+
+## Pattern Reference
+
+### Persistent Memory Pattern
+
+Give your agent memory across runs using a context file:
+
+```yaml
+system_prompt: |
+  ## Context Management
+
+  You maintain a `context.md` file to remember state between runs.
+
+  At the START of each run:
+  1. Read context.md to understand your configuration and history
+  2. If context.md doesn't exist, create it with sensible defaults
+
+  At the END of each run:
+  1. Update context.md with the results of this check
+  2. Keep history to the last 10 entries
+
+permissions:
+  allowed_tools:
+    - Read
+    - Write
+    - Edit
+```
+
+See [Persistent Memory Guide](/guides/persistent-memory/) for details.
+
+### Conditional Notification Pattern
+
+Send notifications only when specific conditions are met:
+
+```yaml
+metadata_file: metadata.json
+
+system_prompt: |
+  After completing your task, write metadata.json with:
+  - shouldNotify: true if the user should be alerted
+  - Other relevant data for the notification
+
+hooks:
+  after_run:
+    - type: discord
+      when: "metadata.shouldNotify"
+      channel_id: "..."
+      bot_token_env: DISCORD_BOT_TOKEN
+```
+
+### Tool Restriction Pattern
+
+Prevent agents from using certain tools:
+
+```yaml
+permissions:
+  allowed_tools:
+    - WebSearch
+    - WebFetch
+    - Read
+    - Write
+    - Edit
+  denied_tools:
+    - Bash        # No shell access
+    - Task        # No spawning subagents
+    - TodoWrite   # Don't waste turns on todos
+```
+
+## Running Examples
+
+### Prerequisites
+
+All examples require:
+- Node.js 18+
+- pnpm (for building from source)
+- `ANTHROPIC_API_KEY` environment variable
+
+Some examples require additional setup:
+- **Discord hooks**: `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID`
+- **Webhook hooks**: External webhook endpoint
+
+### From Source
+
+```bash
+# Build the CLI
+pnpm install
+pnpm build
+
+# Run from examples directory
+cd examples/hello-world
+../../packages/cli/bin/herdctl.js trigger hello-world
+```
+
+### With Installed herdctl
+
+```bash
+# Install herdctl globally
+npm install -g herdctl
+
+# Copy an example
+cp -r node_modules/herdctl/examples/hello-world ./my-agent
+cd my-agent
+
+# Run the agent
+herdctl trigger hello-world
+```
+
+## Creating Your Own
+
+Use an example as a starting point:
+
+```bash
+# Copy and customize
+cp -r examples/price-checker ./my-agent
+cd my-agent
+
+# Edit the agent configuration
+vim agents/price-checker.yaml
+
+# Rename and update
+mv agents/price-checker.yaml agents/my-agent.yaml
+# Update the 'name' field in the YAML
+```
+
+## Related Pages
+
+- [Getting Started](/getting-started/) — Initial setup guide
+- [Agent Configuration](/configuration/agent-config/) — Full configuration reference
+- [Hooks](/concepts/hooks/) — Post-job actions
+- [Persistent Memory Guide](/guides/persistent-memory/) — Memory pattern details

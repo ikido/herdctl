@@ -8,10 +8,14 @@
  */
 
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 
 import { query as claudeSdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import { createJob, getJob, updateJob } from "../state/index.js";
+import { createJob, getJob, updateJob, readJobOutputAll } from "../state/index.js";
 import { JobExecutor, type SDKQueryFunction } from "../runner/index.js";
+import { HookExecutor, type HookContext } from "../hooks/index.js";
+import type { ResolvedAgent, HookEvent } from "../config/index.js";
+import type { JobMetadata } from "../state/schemas/job-metadata.js";
 import type {
   TriggerOptions,
   TriggerResult,
@@ -120,8 +124,8 @@ export class JobControl {
       }
     }
 
-    // Determine the prompt to use
-    const prompt = options?.prompt ?? schedule?.prompt ?? "Execute your configured task";
+    // Determine the prompt to use (priority: options > schedule > agent default > fallback)
+    const prompt = options?.prompt ?? schedule?.prompt ?? agent.default_prompt ?? "Execute your configured task";
 
     const timestamp = new Date().toISOString();
 
@@ -134,6 +138,7 @@ export class JobControl {
 
     // Execute the job - this creates the job record and runs it
     // Note: Job output is written to JSONL by JobExecutor; log streaming picks it up
+    // If onMessage callback is provided, it will be called for each SDK message
     const result = await executor.execute({
       agent,
       prompt,
@@ -141,6 +146,7 @@ export class JobControl {
       triggerType: "manual",
       schedule: scheduleName,
       outputToFile: schedule?.outputToFile ?? false,
+      onMessage: options?.onMessage,
     });
 
     // Emit job:created event
@@ -164,15 +170,22 @@ export class JobControl {
           durationSeconds: result.durationSeconds ?? 0,
           timestamp: new Date().toISOString(),
         });
+
+        // Execute hooks for completed job
+        await this.executeHooks(agent, jobMetadata, "completed", scheduleName);
       } else {
+        const error = result.error ?? new Error("Job failed without error details");
         emitter.emit("job:failed", {
           job: jobMetadata,
           agentName,
-          error: result.error ?? new Error("Job failed without error details"),
+          error,
           exitReason: "error",
           durationSeconds: result.durationSeconds,
           timestamp: new Date().toISOString(),
         });
+
+        // Execute hooks for failed job
+        await this.executeHooks(agent, jobMetadata, "failed", scheduleName, error.message);
       }
     }
 
@@ -399,6 +412,21 @@ export class JobControl {
   }
 
   /**
+   * Get the final output from a completed job
+   *
+   * Reads the job's JSONL file and extracts the last meaningful content:
+   * either a tool_result with result, or an assistant message with content.
+   *
+   * @param jobId - ID of the job to get output from
+   * @returns The final output string, or empty string if not found
+   */
+  async getJobFinalOutput(jobId: string): Promise<string> {
+    const stateDir = this.ctx.getStateDir();
+    const jobsDir = join(stateDir, "jobs");
+    return this.extractJobOutput(jobsDir, jobId);
+  }
+
+  /**
    * Cancel all running jobs during shutdown
    *
    * @param cancelTimeout - Timeout for each job cancellation
@@ -439,5 +467,213 @@ export class JobControl {
 
     await Promise.all(cancelPromises);
     logger.info("All jobs cancelled");
+  }
+
+  // ===========================================================================
+  // Hook Execution
+  // ===========================================================================
+
+  /**
+   * Execute hooks for a job (after_run and on_error)
+   */
+  private async executeHooks(
+    agent: ResolvedAgent,
+    jobMetadata: JobMetadata,
+    event: HookEvent,
+    scheduleName?: string,
+    errorMessage?: string
+  ): Promise<void> {
+    const logger = this.ctx.getLogger();
+
+    // Check if agent has any hooks configured
+    if (!agent.hooks) {
+      return;
+    }
+
+    // Build hook context from job metadata (reads actual output from JSONL)
+    const stateDir = this.ctx.getStateDir();
+    const jobsDir = join(stateDir, "jobs");
+    const context = await this.buildHookContext(agent, jobMetadata, jobsDir, event, scheduleName, errorMessage);
+
+    // Resolve agent workspace for hook execution
+    const agentWorkspace = this.resolveAgentWorkspace(agent);
+
+    // Create hook executor with appropriate cwd
+    const hookExecutor = new HookExecutor({
+      logger,
+      cwd: agentWorkspace,
+    });
+
+    // Execute after_run hooks (run for all events)
+    if (agent.hooks.after_run && agent.hooks.after_run.length > 0) {
+      logger.debug(`Executing ${agent.hooks.after_run.length} after_run hook(s)`);
+      const afterRunResult = await hookExecutor.executeHooks(agent.hooks, context, "after_run");
+
+      if (afterRunResult.shouldFailJob) {
+        logger.warn(
+          `Hook failure with continue_on_error=false detected for job ${jobMetadata.id}`
+        );
+      }
+    }
+
+    // Execute on_error hooks (only for failed events)
+    if (event === "failed" && agent.hooks.on_error && agent.hooks.on_error.length > 0) {
+      logger.debug(`Executing ${agent.hooks.on_error.length} on_error hook(s)`);
+      const onErrorResult = await hookExecutor.executeHooks(agent.hooks, context, "on_error");
+
+      if (onErrorResult.shouldFailJob) {
+        logger.warn(
+          `on_error hook failure with continue_on_error=false detected for job ${jobMetadata.id}`
+        );
+      }
+    }
+  }
+
+  /**
+   * Build HookContext from job metadata and agent info
+   * Reads the actual job output from the JSONL file and agent metadata
+   */
+  private async buildHookContext(
+    agent: ResolvedAgent,
+    jobMetadata: JobMetadata,
+    jobsDir: string,
+    event: HookEvent,
+    scheduleName?: string,
+    errorMessage?: string
+  ): Promise<HookContext> {
+    const completedAt = jobMetadata.finished_at ?? new Date().toISOString();
+    const startedAt = new Date(jobMetadata.started_at);
+    const completedAtDate = new Date(completedAt);
+    const durationMs = completedAtDate.getTime() - startedAt.getTime();
+
+    // Read the actual job output from JSONL file
+    const output = await this.extractJobOutput(jobsDir, jobMetadata.id);
+
+    // Read agent-provided metadata file (if it exists)
+    const metadata = await this.readAgentMetadata(agent);
+
+    return {
+      event,
+      job: {
+        id: jobMetadata.id,
+        agentId: agent.name,
+        scheduleName: scheduleName ?? jobMetadata.schedule ?? undefined,
+        startedAt: jobMetadata.started_at,
+        completedAt,
+        durationMs,
+      },
+      result: {
+        success: event === "completed",
+        output,
+        error: errorMessage,
+      },
+      agent: {
+        id: agent.name,
+        name: agent.identity?.name ?? agent.name,
+      },
+      metadata,
+    };
+  }
+
+  /**
+   * Read agent-provided metadata from the configured metadata file
+   *
+   * Agents can write a JSON file (default: metadata.json in workspace) with
+   * arbitrary structured data that gets included in the HookContext.
+   * This allows conditional hook execution via the `when` field.
+   */
+  private async readAgentMetadata(agent: ResolvedAgent): Promise<Record<string, unknown> | undefined> {
+    const logger = this.ctx.getLogger();
+    const config = this.ctx.getConfig();
+
+    // Determine workspace path (fall back to fleet config directory)
+    const workspace = this.resolveAgentWorkspace(agent) ?? config?.configDir;
+    if (!workspace) {
+      return undefined;
+    }
+
+    // Determine metadata file path (default: metadata.json)
+    const metadataFileName = agent.metadata_file ?? "metadata.json";
+    const metadataPath = join(workspace, metadataFileName);
+
+    try {
+      const content = await readFile(metadataPath, "utf-8");
+      const metadata = JSON.parse(content);
+
+      if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) {
+        logger.warn(`Agent metadata file ${metadataPath} is not a JSON object, ignoring`);
+        return undefined;
+      }
+
+      logger.debug(`Read agent metadata from ${metadataPath}`);
+      return metadata as Record<string, unknown>;
+    } catch (error) {
+      // File not found is expected - agent may not write metadata
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return undefined;
+      }
+
+      // Log other errors but don't fail hook execution
+      logger.warn(`Failed to read agent metadata from ${metadataPath}: ${(error as Error).message}`);
+      return undefined;
+    }
+  }
+
+  /**
+   * Extract the final output from a job's JSONL file
+   *
+   * Prioritizes assistant text content over tool results since that's what
+   * humans care about - the agent's actual response, not raw tool output.
+   */
+  private async extractJobOutput(jobsDir: string, jobId: string): Promise<string> {
+    const logger = this.ctx.getLogger();
+
+    try {
+      const messages = await readJobOutputAll(jobsDir, jobId, { logger });
+
+      // Collect all assistant messages with text content (in order)
+      const assistantTexts: string[] = [];
+      for (const msg of messages) {
+        if (msg.type === "assistant" && "content" in msg && msg.content) {
+          assistantTexts.push(msg.content);
+        }
+      }
+
+      // Return the last assistant message if we have any
+      if (assistantTexts.length > 0) {
+        return assistantTexts[assistantTexts.length - 1];
+      }
+
+      // Fallback: look for tool_result with meaningful content
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i];
+        if (msg.type === "tool_result" && "result" in msg && msg.result !== undefined) {
+          const result = msg.result;
+          return typeof result === "string" ? result : JSON.stringify(result, null, 2);
+        }
+      }
+
+      return "";
+    } catch (error) {
+      logger.warn(`Failed to read job output for ${jobId}: ${(error as Error).message}`);
+      return "";
+    }
+  }
+
+  /**
+   * Resolve the agent's workspace path
+   */
+  private resolveAgentWorkspace(agent: ResolvedAgent): string | undefined {
+    if (!agent.workspace) {
+      return undefined;
+    }
+
+    // If workspace is a string, it's the path directly
+    if (typeof agent.workspace === "string") {
+      return agent.workspace;
+    }
+
+    // If workspace is an object with root property
+    return agent.workspace.root;
   }
 }

@@ -47,6 +47,46 @@ Each agent connects to Discord with its own bot account. When a user messages or
 | `mention` | Responds only when @mentioned | Shared channels where multiple bots exist |
 | `auto` | Responds to all messages | Dedicated support channels, DMs |
 
+## Chat vs Notification Hooks
+
+herdctl supports two different Discord integrations:
+
+| Integration | Type | Purpose | Configuration |
+|------------|------|---------|---------------|
+| **Chat** | Two-way | Interactive conversations | `chat.discord` |
+| **Notification Hooks** | One-way | Job completion alerts | `hooks.after_run` |
+
+### Chat Integration (This Page)
+
+The chat integration documented on this page enables **interactive, two-way conversations**:
+- Bot responds to user messages and mentions
+- Maintains conversation context
+- Users can ask questions and get responses
+- Configured in the `chat.discord` section of agent config
+
+### Notification Hooks
+
+[Notification hooks](/concepts/hooks/) send **one-way alerts** when jobs complete:
+- Post job results to a channel
+- Conditional notifications (e.g., only when a price drops)
+- No user interaction—just announcements
+- Configured in the `hooks.after_run` section
+
+**Example notification hook:**
+
+```yaml
+hooks:
+  after_run:
+    - type: discord
+      channel_id: "${DISCORD_CHANNEL_ID}"
+      bot_token_env: DISCORD_BOT_TOKEN
+      when: "metadata.shouldNotify"
+```
+
+<Aside type="tip">
+  Use **chat** when you want users to interact with your agent. Use **notification hooks** when you want to announce job results or alerts.
+</Aside>
+
 ## Prerequisites
 
 Before setting up Discord integration, ensure you have:

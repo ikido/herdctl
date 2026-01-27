@@ -9,6 +9,7 @@ let mockFleetManagerInstance: {
   initialize: Mock;
   trigger: Mock;
   streamJobOutput: Mock;
+  getJobFinalOutput: Mock;
 };
 
 // Mock TriggerResult data
@@ -57,6 +58,7 @@ vi.mock("@herdctl/core", async () => {
     initialize: Mock;
     trigger: Mock;
     streamJobOutput: Mock;
+    getJobFinalOutput: Mock;
 
     constructor() {
       this.initialize = vi.fn().mockResolvedValue(undefined);
@@ -66,6 +68,7 @@ vi.mock("@herdctl/core", async () => {
           yield entry;
         }
       });
+      this.getJobFinalOutput = vi.fn().mockResolvedValue("");
 
       // Store reference for test access
       mockFleetManagerInstance = this;
@@ -145,14 +148,14 @@ describe("triggerCommand", () => {
       expect(mockFleetManagerInstance.trigger).toHaveBeenCalledWith(
         "code-reviewer",
         undefined,
-        { prompt: undefined }
+        expect.objectContaining({ prompt: undefined })
       );
     });
 
     it("displays job ID on success", async () => {
       await triggerCommand("code-reviewer", {});
 
-      expect(consoleLogs.some((log) => log.includes("Job triggered successfully"))).toBe(true);
+      expect(consoleLogs.some((log) => log.includes("Job completed"))).toBe(true);
       expect(consoleLogs.some((log) => log.includes("job-2024-01-15-abc123"))).toBe(true);
     });
 
@@ -163,11 +166,11 @@ describe("triggerCommand", () => {
       expect(consoleLogs.some((log) => log.includes("code-reviewer"))).toBe(true);
     });
 
-    it("displays usage hints without --wait", async () => {
+    it("displays usage hints", async () => {
       await triggerCommand("code-reviewer", {});
 
+      // Now shows hint to view detailed logs (output is displayed by default)
       expect(consoleLogs.some((log) => log.includes("herdctl logs --job"))).toBe(true);
-      expect(consoleLogs.some((log) => log.includes("--wait"))).toBe(true);
     });
   });
 
@@ -178,7 +181,7 @@ describe("triggerCommand", () => {
       expect(mockFleetManagerInstance.trigger).toHaveBeenCalledWith(
         "code-reviewer",
         "hourly",
-        { prompt: undefined }
+        expect.objectContaining({ prompt: undefined })
       );
     });
 
@@ -198,7 +201,7 @@ describe("triggerCommand", () => {
       expect(mockFleetManagerInstance.trigger).toHaveBeenCalledWith(
         "code-reviewer",
         undefined,
-        { prompt: customPrompt }
+        expect.objectContaining({ prompt: customPrompt })
       );
     });
 

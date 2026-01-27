@@ -40,6 +40,13 @@ export {
   DiscordChannelSchema,
   DiscordGuildSchema,
   AgentChatDiscordSchema,
+  // Hook schemas
+  HookEventSchema,
+  ShellHookConfigSchema,
+  WebhookHookConfigSchema,
+  DiscordHookConfigSchema,
+  HookConfigSchema,
+  AgentHooksSchema,
   // Types
   type FleetConfig,
   type Defaults,
@@ -74,6 +81,19 @@ export {
   type DiscordChannel,
   type DiscordGuild,
   type AgentChatDiscord,
+  // Hook types
+  type HookEvent,
+  type ShellHookConfig,
+  type WebhookHookConfig,
+  type DiscordHookConfig,
+  type HookConfig,
+  type AgentHooks,
+  // Hook input types (for construction, allow optional fields)
+  type ShellHookConfigInput,
+  type WebhookHookConfigInput,
+  type DiscordHookConfigInput,
+  type HookConfigInput,
+  type AgentHooksInput,
 } from "./schema.js";
 
 // Parser exports
