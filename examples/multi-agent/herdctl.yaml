@@ -10,6 +10,8 @@ fleet:
 agents:
   - path: ../hurricane-watcher/agents/hurricane-watcher.yaml
     overrides:
+      # Run in the original example directory for access to context.md
+      workspace: ../hurricane-watcher
       # Check more frequently in this fleet
       schedules:
         check:
@@ -32,6 +34,8 @@ agents:
 
   - path: ../price-checker/agents/price-checker.yaml
     overrides:
+      # Run in the original example directory for access to context.md
+      workspace: ../price-checker
       # Check more frequently in this fleet
       schedules:
         check:
