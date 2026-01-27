@@ -19,6 +19,10 @@
  * - herdctl jobs              List recent jobs
  * - herdctl job <id>          Show job details
  * - herdctl cancel <id>       Cancel running job
+ *
+ * Commands (Session Management):
+ * - herdctl sessions              List Claude Code sessions
+ * - herdctl sessions resume [id]  Resume a session in Claude Code
  */
 
 import { Command } from "commander";
@@ -33,6 +37,7 @@ import { triggerCommand } from "./commands/trigger.js";
 import { jobsCommand } from "./commands/jobs.js";
 import { jobCommand } from "./commands/job.js";
 import { cancelCommand } from "./commands/cancel.js";
+import { sessionsCommand, sessionsResumeCommand } from "./commands/sessions.js";
 
 const program = new Command();
 
@@ -236,6 +241,53 @@ program
         force: options.force,
         yes: options.yes,
         json: options.json,
+        config: options.config,
+        state: options.state,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
+  });
+
+// Session management command group
+const sessionsCmd = program
+  .command("sessions")
+  .description("List and resume Claude Code sessions for agents")
+  .option("-a, --agent <name>", "Filter by agent name")
+  .option("-v, --verbose", "Show full resume commands")
+  .option("--json", "Output as JSON for scripting")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .option("-s, --state <path>", "Path to state directory (default: .herdctl)")
+  .action(async (options) => {
+    try {
+      await sessionsCommand({
+        agent: options.agent,
+        verbose: options.verbose,
+        json: options.json,
+        config: options.config,
+        state: options.state,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("User force closed")) {
+        console.log("\nAborted.");
+        process.exit(0);
+      }
+      throw error;
+    }
+  });
+
+sessionsCmd
+  .command("resume [session-id]")
+  .description("Resume a session in Claude Code (defaults to most recent)")
+  .option("-c, --config <path>", "Path to config file or directory")
+  .option("-s, --state <path>", "Path to state directory (default: .herdctl)")
+  .action(async (sessionId, options) => {
+    try {
+      await sessionsResumeCommand(sessionId, {
         config: options.config,
         state: options.state,
       });

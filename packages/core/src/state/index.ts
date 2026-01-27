@@ -73,6 +73,7 @@ export {
   getSessionInfo,
   updateSessionInfo,
   clearSession,
+  listSessions,
   type SessionOptions,
   type SessionLogger,
   type SessionInfoUpdates,

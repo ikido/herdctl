@@ -5,7 +5,7 @@
  * .herdctl/sessions/<agent-name>.json
  */
 
-import { unlink } from "node:fs/promises";
+import { readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicWriteJson } from "./utils/atomic.js";
 import { safeReadJson } from "./utils/reads.js";
@@ -250,4 +250,66 @@ export async function clearSession(
       error as Error
     );
   }
+}
+
+/**
+ * List all sessions in the sessions directory
+ *
+ * Returns sessions sorted by last_used_at (most recent first).
+ * Handles corrupted or invalid session files gracefully by skipping them.
+ *
+ * @param sessionsDir - Path to the sessions directory
+ * @param options - Optional operation options
+ * @returns Array of session info objects, sorted by last_used_at descending
+ *
+ * @example
+ * ```typescript
+ * const sessions = await listSessions('/path/to/.herdctl/sessions');
+ * for (const session of sessions) {
+ *   console.log(`${session.agent_name}: ${session.session_id} (${session.job_count} jobs)`);
+ * }
+ * ```
+ */
+export async function listSessions(
+  sessionsDir: string,
+  options: SessionOptions = {}
+): Promise<SessionInfo[]> {
+  const { logger = console } = options;
+
+  let files: string[];
+  try {
+    files = await readdir(sessionsDir);
+  } catch (error) {
+    // Directory doesn't exist or can't be read - return empty array
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    logger.warn(`Failed to read sessions directory: ${(error as Error).message}`);
+    return [];
+  }
+
+  const sessions: SessionInfo[] = [];
+
+  for (const file of files) {
+    // Only process .json files
+    if (!file.endsWith(".json")) {
+      continue;
+    }
+
+    const agentName = file.replace(".json", "");
+    const session = await getSessionInfo(sessionsDir, agentName, options);
+
+    if (session) {
+      sessions.push(session);
+    }
+  }
+
+  // Sort by last_used_at descending (most recent first)
+  sessions.sort((a, b) => {
+    const aTime = new Date(a.last_used_at).getTime();
+    const bTime = new Date(b.last_used_at).getTime();
+    return bTime - aTime;
+  });
+
+  return sessions;
 }

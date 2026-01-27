@@ -33,6 +33,12 @@ herdctl status
 
 # Manually trigger an agent
 herdctl trigger my-agent
+
+# List agent sessions
+herdctl sessions
+
+# Resume a session in Claude Code
+herdctl sessions resume
 ```
 
 ## Configuration
@@ -75,6 +81,7 @@ permissions:
 - **Work Sources** - GitHub Issues integration (Jira/Linear planned)
 - **Execution Hooks** - Shell commands, webhooks, Discord notifications
 - **Chat Integration** - Discord connector for conversational agents
+- **Session Management** - List and resume Claude Code sessions from CLI
 
 ## Documentation
 
