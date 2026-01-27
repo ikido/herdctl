@@ -94,8 +94,9 @@ export class ShellHookRunner {
   async execute(config: ShellHookConfigInput, context: HookContext): Promise<HookResult> {
     const startTime = Date.now();
     const timeout = config.timeout ?? DEFAULT_TIMEOUT;
+    const hookName = config.name ?? "shell hook";
 
-    this.logger.debug(`Executing shell hook: ${config.command}`);
+    this.logger.debug(`Executing ${hookName}`);
 
     try {
       const result = await this.runCommand(config.command, context, timeout);
@@ -103,9 +104,7 @@ export class ShellHookRunner {
       const durationMs = Date.now() - startTime;
 
       if (result.exitCode === 0) {
-        this.logger.info(
-          `Shell hook completed successfully in ${durationMs}ms: ${config.command}`
-        );
+        this.logger.info(`${hookName} completed in ${durationMs}ms`);
         return {
           success: true,
           hookType: "shell",
@@ -114,9 +113,7 @@ export class ShellHookRunner {
           exitCode: result.exitCode,
         };
       } else {
-        this.logger.warn(
-          `Shell hook failed with exit code ${result.exitCode}: ${config.command}`
-        );
+        this.logger.warn(`${hookName} failed with exit code ${result.exitCode}`);
         return {
           success: false,
           hookType: "shell",
@@ -130,7 +127,7 @@ export class ShellHookRunner {
       const durationMs = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      this.logger.error(`Shell hook error: ${errorMessage}`);
+      this.logger.error(`${hookName} error: ${errorMessage}`);
 
       return {
         success: false,

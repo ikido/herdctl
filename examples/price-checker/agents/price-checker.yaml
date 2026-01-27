@@ -1,7 +1,7 @@
 name: price-checker
 description: Monitors product prices across multiple retailers and alerts on deals
 
-max_turns: 20
+max_turns: 10
 
 default_prompt: "Check current prices and update context."
 
@@ -13,11 +13,9 @@ system_prompt: |
 
   **Product**: Fujifilm X-T5 Mirrorless Camera (Body Only, Black)
   **Target Price**: $1,499 or lower (MSRP is $1,699)
-  **Retailers to Check**:
-  - B&H Photo (bhphotovideo.com)
-  - Adorama (adorama.com)
-  - Amazon (amazon.com)
-  - KEH Camera (keh.com) - for used/refurbished options
+  **Retailers to Check** (keep it quick - just 2 sources):
+  - B&H Photo (bhphotovideo.com) - new
+  - MPB (mpb.com) - used/refurbished
 
   ## How to Work
 
@@ -41,9 +39,35 @@ system_prompt: |
   - Whether target price is met (DEAL FOUND vs. No deals)
   - Any notable changes from last check
 
+  ## Metadata Output
+
+  As your **final action before responding**, write a `metadata.json` file with:
+  ```json
+  {
+    "shouldNotify": true,
+    "lowestPrice": 1299,
+    "discount": 400,
+    "retailer": "MPB",
+    "url": "https://www.mpb.com/...",
+    "meetsTarget": true
+  }
+  ```
+
+  Field descriptions:
+  - `shouldNotify`: Set to `true` when a deal is found (price meets target)
+  - `lowestPrice`: The lowest price found across all retailers
+  - `discount`: The discount from MSRP ($1,699), or 0 if at MSRP
+  - `retailer`: Name of the retailer with the lowest price
+  - `url`: Direct URL to the product page (if available)
+  - `meetsTarget`: `true` if lowestPrice <= $1,499
+
+  This metadata enables conditional notifications - hooks can check
+  `metadata.shouldNotify` to only send alerts when deals are found.
+
   ## Important Notes
 
   - Always update context.md, even if prices haven't changed
+  - Always write metadata.json with current findings
   - Note if a product is out of stock at a retailer
   - For KEH, note the condition (Excellent, Good, etc.) alongside price
   - If you can't access a site, note the error and continue with others
@@ -70,17 +94,25 @@ schedules:
 
 hooks:
   after_run:
-    # Echo the output to console
+    # Display metadata and notification status
     - type: shell
-      command: "jq -r '.result.output'"
+      name: "Check notification status"
+      command: |
+        if jq -e '.metadata.shouldNotify == true' > /dev/null 2>&1; then
+          echo "Deal found - Discord notification would be sent"
+        else
+          echo "No deal - Discord notification skipped"
+        fi
 
-    # Uncomment to enable Discord notifications:
-    # - type: discord
-    #   bot_token: "${DISCORD_BOT_TOKEN}"
-    #   channel_id: "${DISCORD_CHANNEL_ID}"
+    # Uncomment to enable Discord notifications (only when deal found):
+    - type: discord
+      bot_token_env: DISCORD_BOT_TOKEN
+      channel_id: "${DISCORD_CHANNEL_ID}"
+      when: "metadata.shouldNotify"
 
-    # Uncomment to enable webhook notifications:
+    # Uncomment to enable webhook notifications (only when deal found):
     # - type: webhook
     #   url: "https://your-webhook-endpoint.com/price-alert"
     #   headers:
     #     Authorization: "Bearer ${WEBHOOK_TOKEN}"
+    #   when: "metadata.shouldNotify"

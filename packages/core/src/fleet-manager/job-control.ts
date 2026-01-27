@@ -8,6 +8,7 @@
  */
 
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 
 import { query as claudeSdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { createJob, getJob, updateJob, readJobOutputAll } from "../state/index.js";
@@ -137,6 +138,7 @@ export class JobControl {
 
     // Execute the job - this creates the job record and runs it
     // Note: Job output is written to JSONL by JobExecutor; log streaming picks it up
+    // If onMessage callback is provided, it will be called for each SDK message
     const result = await executor.execute({
       agent,
       prompt,
@@ -144,6 +146,7 @@ export class JobControl {
       triggerType: "manual",
       schedule: scheduleName,
       outputToFile: schedule?.outputToFile ?? false,
+      onMessage: options?.onMessage,
     });
 
     // Emit job:created event
@@ -528,7 +531,7 @@ export class JobControl {
 
   /**
    * Build HookContext from job metadata and agent info
-   * Reads the actual job output from the JSONL file
+   * Reads the actual job output from the JSONL file and agent metadata
    */
   private async buildHookContext(
     agent: ResolvedAgent,
@@ -545,6 +548,9 @@ export class JobControl {
 
     // Read the actual job output from JSONL file
     const output = await this.extractJobOutput(jobsDir, jobMetadata.id);
+
+    // Read agent-provided metadata file (if it exists)
+    const metadata = await this.readAgentMetadata(agent);
 
     return {
       event,
@@ -565,7 +571,52 @@ export class JobControl {
         id: agent.name,
         name: agent.identity?.name ?? agent.name,
       },
+      metadata,
     };
+  }
+
+  /**
+   * Read agent-provided metadata from the configured metadata file
+   *
+   * Agents can write a JSON file (default: metadata.json in workspace) with
+   * arbitrary structured data that gets included in the HookContext.
+   * This allows conditional hook execution via the `when` field.
+   */
+  private async readAgentMetadata(agent: ResolvedAgent): Promise<Record<string, unknown> | undefined> {
+    const logger = this.ctx.getLogger();
+    const config = this.ctx.getConfig();
+
+    // Determine workspace path (fall back to fleet config directory)
+    const workspace = this.resolveAgentWorkspace(agent) ?? config?.configDir;
+    if (!workspace) {
+      return undefined;
+    }
+
+    // Determine metadata file path (default: metadata.json)
+    const metadataFileName = agent.metadata_file ?? "metadata.json";
+    const metadataPath = join(workspace, metadataFileName);
+
+    try {
+      const content = await readFile(metadataPath, "utf-8");
+      const metadata = JSON.parse(content);
+
+      if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) {
+        logger.warn(`Agent metadata file ${metadataPath} is not a JSON object, ignoring`);
+        return undefined;
+      }
+
+      logger.debug(`Read agent metadata from ${metadataPath}`);
+      return metadata as Record<string, unknown>;
+    } catch (error) {
+      // File not found is expected - agent may not write metadata
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return undefined;
+      }
+
+      // Log other errors but don't fail hook execution
+      logger.warn(`Failed to read agent metadata from ${metadataPath}: ${(error as Error).message}`);
+      return undefined;
+    }
   }
 
   /**

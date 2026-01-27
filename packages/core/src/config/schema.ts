@@ -374,10 +374,14 @@ export const HookEventSchema = z.enum(["completed", "failed", "timeout", "cancel
  * Base hook configuration shared by all hook types
  */
 const BaseHookConfigSchema = z.object({
+  /** Human-readable name for this hook (used in logs) */
+  name: z.string().optional(),
   /** Whether to continue with subsequent hooks if this hook fails (default: true) */
   continue_on_error: z.boolean().optional().default(true),
   /** Filter which events trigger this hook (default: all events) */
   on_events: z.array(HookEventSchema).optional(),
+  /** Conditional execution: dot-notation path to a boolean field in the hook context (e.g., "metadata.shouldNotify") */
+  when: z.string().optional(),
 });
 
 /**
@@ -468,6 +472,8 @@ export const AgentConfigSchema = z
     model: z.string().optional(),
     max_turns: z.number().int().positive().optional(),
     permission_mode: PermissionModeSchema.optional(),
+    /** Path to metadata JSON file written by agent (default: metadata.json in workspace) */
+    metadata_file: z.string().optional(),
   })
   .strict();
 

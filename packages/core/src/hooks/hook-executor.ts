@@ -194,11 +194,8 @@ export class HookExecutor {
 
     // Execute hooks sequentially
     for (const hookConfig of hooks) {
-      // Check if this hook should run for this event
-      if (!this.shouldExecuteHook(hookConfig, context.event)) {
-        this.logger.debug(
-          `Skipping ${hookConfig.type} hook (filtered by on_events)`
-        );
+      // Check if this hook should run (on_events filter and when condition)
+      if (!this.shouldExecuteHook(hookConfig, context)) {
         skippedHooks++;
         continue;
       }
@@ -277,15 +274,53 @@ export class HookExecutor {
   }
 
   /**
-   * Check if a hook should execute for a given event
+   * Check if a hook should execute for a given event and context
    */
-  private shouldExecuteHook(config: HookConfigInput, event: HookEvent): boolean {
-    // If on_events is not specified, run for all events
-    if (!config.on_events || config.on_events.length === 0) {
-      return true;
+  private shouldExecuteHook(config: HookConfigInput, context: HookContext): boolean {
+    const event = context.event;
+
+    // Check on_events filter first
+    if (config.on_events && config.on_events.length > 0) {
+      if (!config.on_events.includes(event)) {
+        return false;
+      }
     }
 
-    // Check if the event is in the on_events list
-    return config.on_events.includes(event);
+    // Check `when` condition (dot-notation path to boolean in context)
+    if (config.when) {
+      const value = this.getPathValue(context as unknown as Record<string, unknown>, config.when);
+      if (!value) {
+        this.logger.debug(
+          `Skipping ${config.type} hook: condition "${config.when}" is falsy (value: ${JSON.stringify(value)})`
+        );
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Get a value from an object using dot-notation path
+   *
+   * @example
+   * getPathValue({ metadata: { shouldNotify: true } }, "metadata.shouldNotify") // true
+   * getPathValue({ result: { success: true } }, "result.success") // true
+   */
+  private getPathValue(obj: Record<string, unknown>, path: string): unknown {
+    const parts = path.split(".");
+    let current: unknown = obj;
+
+    for (const part of parts) {
+      if (current === null || current === undefined) {
+        return undefined;
+      }
+      if (typeof current !== "object") {
+        return undefined;
+      }
+      current = (current as Record<string, unknown>)[part];
+    }
+
+    return current;
   }
 }

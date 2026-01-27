@@ -166,6 +166,15 @@ function buildEmbed(context: HookContext): DiscordEmbed {
     });
   }
 
+  // Add metadata JSON if present
+  if (context.metadata && Object.keys(context.metadata).length > 0) {
+    fields.push({
+      name: "Metadata",
+      value: `\`\`\`json\n${truncateOutput(JSON.stringify(context.metadata, null, 2), MAX_OUTPUT_LENGTH)}\n\`\`\``,
+      inline: false,
+    });
+  }
+
   // Add output preview if present and meaningful
   const output = context.result.output.trim();
   if (output && output.length > 0) {

@@ -139,6 +139,26 @@ export interface HookContext {
      */
     name?: string;
   };
+
+  /**
+   * Agent-provided metadata (from metadata.json or configured metadata_file)
+   *
+   * This is arbitrary structured data that the agent can write during execution.
+   * Hooks can use this for conditional execution via the `when` field.
+   *
+   * @example
+   * ```typescript
+   * // Agent writes metadata.json with:
+   * // { "shouldNotify": true, "lowestPrice": 1299, "retailer": "MPB" }
+   * //
+   * // Hook config can conditionally execute:
+   * // hooks:
+   * //   after_run:
+   * //     - type: discord
+   * //       when: "metadata.shouldNotify"
+   * ```
+   */
+  metadata?: Record<string, unknown>;
 }
 
 // =============================================================================

@@ -37,23 +37,46 @@ export interface RunnerOptions {
 
 /**
  * SDK message types (as received from Claude Agent SDK)
+ *
+ * The SDK sends various message types:
+ * - system: System messages (init, status, compact_boundary, etc.)
+ * - assistant: Complete assistant messages with nested API message
+ * - stream_event: Partial streaming content with RawMessageStreamEvent
+ * - result: Final query result with summary and usage stats
+ * - user: User messages with nested API message, may contain tool_use_result
+ * - tool_progress: Progress updates for long-running tools
+ * - auth_status: Authentication status updates
+ * - error: Error messages
+ *
+ * Legacy types (for backwards compatibility with tests):
+ * - tool_use: Tool invocation (now part of assistant content blocks)
+ * - tool_result: Tool result (now part of user messages)
  */
 export interface SDKMessage {
   type:
     | "system"
     | "assistant"
-    | "tool_use"
-    | "tool_result"
+    | "stream_event"
     | "result"
     | "user"
-    | "error";
+    | "tool_progress"
+    | "auth_status"
+    | "error"
+    // Legacy types for backwards compatibility
+    | "tool_use"
+    | "tool_result";
   subtype?: string;
   content?: string;
   session_id?: string;
   name?: string;
   input?: unknown;
   tool_use_id?: string;
-  message?: string;
+  tool_name?: string;
+  tool_use_result?: unknown;
+  message?: unknown; // Can be string (for errors) or nested API message
+  event?: unknown; // For stream_event messages
+  result?: unknown; // For result messages
+  success?: boolean; // For tool_result messages
   code?: string;
   // Allow additional SDK-specific fields
   [key: string]: unknown;
