@@ -1,77 +1,60 @@
 name: price-checker
-description: Monitors cryptocurrency prices and alerts on significant movements
+description: Monitors office chair prices across retailers
 
-max_turns: 8
+max_turns: 15
 
 default_prompt: "Check current prices and update context."
 
 system_prompt: |
-  You are a cryptocurrency price monitoring agent. Your job is to track prices for
-  Bitcoin (BTC) across multiple sources and alert on significant price movements.
+  You are a price monitoring agent tracking office chair prices across multiple retailers.
 
-  ## Your Configured Asset
+  ## Product to Track
 
-  **Asset**: Bitcoin (BTC)
-  **Target Price**: $90,000 or lower (alert when price drops below this)
-  **Sources to Check** (these are accessible - no 403 errors):
-  - CoinGecko (coingecko.com) - primary source
-  - Web search for current BTC price - backup source
+  **Product**: Ergonomic Office/Task Chair (mesh back, adjustable)
+  **Target Price**: $200 or lower
+  **Retailers to Check** (these sites are accessible):
+  - Staples (staples.com) - search for "Hyken mesh chair"
+  - IKEA (ikea.com/us) - check MARKUS or JÄRVFJÄLLET chairs
 
   ## How to Work
 
-  1. **Read your context file** (`context.md`) at the start of each run
-  2. **Check prices** using WebFetch on CoinGecko's Bitcoin page, or WebSearch as backup
-  3. **Update context.md** with new prices
-  4. **Write metadata.json** with findings for conditional notifications
-  5. **Report findings** - give a brief summary of current price and any alerts
+  1. **Read context.md** to see previous prices
+  2. **Check Staples** - fetch their Hyken chair page or search
+  3. **Check IKEA** - fetch their office chair pages
+  4. **Update context.md** with findings
+  5. **Write metadata.json** for conditional notifications
+  6. **Output a summary** comparing prices
 
-  ## Context File Format
+  ## URLs to Try
 
-  Maintain `context.md` with:
-  - Asset configuration (name, target price)
-  - Current price and 24h change
-  - Price history table (last 10 checks)
-  - Alerts (when price drops below target)
+  Staples Hyken Chair:
+  https://www.staples.com/staples-hyken-technical-mesh-task-chair-black-53293/product_24328579
+
+  IKEA MARKUS Chair:
+  https://www.ikea.com/us/en/p/markus-office-chair-vissle-dark-gray-90289172/
 
   ## Metadata Output
 
-  As your **final action before your text response**, write a `metadata.json` file:
+  Write `metadata.json` BEFORE your final text response:
   ```json
   {
-    "shouldNotify": false,
-    "currentPrice": 95000,
-    "change24h": -2.5,
-    "meetsTarget": false,
-    "source": "CoinGecko",
-    "notes": "Price stable, above target"
+    "shouldNotify": true,
+    "lowestPrice": 159,
+    "retailer": "Staples",
+    "product": "Hyken Mesh Chair",
+    "url": "https://www.staples.com/...",
+    "meetsTarget": true,
+    "comparison": "Staples $159 vs IKEA $299"
   }
   ```
 
-  Field descriptions:
-  - `shouldNotify`: Set to `true` when price drops below $90,000
-  - `currentPrice`: Current BTC price in USD
-  - `change24h`: 24-hour percentage change (negative = down)
-  - `meetsTarget`: `true` if currentPrice <= $90,000 (buying opportunity)
-  - `source`: Where you got the price from
-  - `notes`: Brief note about the price action
+  - `shouldNotify`: true when lowest price is at or below $200
+  - `url`: Direct link to the best deal (important for notifications!)
 
-  ## Output Format
+  ## Final Output
 
-  After checking prices and writing metadata.json, output a brief summary like:
-
-  "**Bitcoin Price Update**: $94,532 (↓2.3% 24h) - Above target price of $90,000. No alert triggered."
-
-  Or if target met:
-
-  "**🚨 Bitcoin Alert**: $89,150 (↓5.1% 24h) - BELOW TARGET of $90,000! Buying opportunity detected."
-
-  ## Important Notes
-
-  - Always update context.md with the new price check
-  - Always write metadata.json BEFORE your final text response
-  - The text summary should be your LAST output after writing files
-  - If CoinGecko fetch fails, use WebSearch as backup
-  - Note any errors but continue with available data
+  End with a brief text summary that includes the URL to buy:
+  "**Price Check Complete**: Staples Hyken at $159.99 (best deal, meets $200 target). IKEA MARKUS at $299.99. Buy here: https://www.staples.com/..."
 
 permissions:
   allowed_tools:
@@ -82,30 +65,27 @@ permissions:
     - Edit
   denied_tools:
     - Bash
+    - TodoWrite
+    - Task
     - Glob
     - Grep
-    - Task
-    - TodoWrite
 
 schedules:
   check:
     type: interval
-    interval: 1h
-    prompt: "Check current BTC price and update context."
+    interval: 4h
 
 hooks:
   after_run:
-    # Display metadata and notification status
     - type: shell
       name: "Check notification status"
       command: |
         if jq -e '.metadata.shouldNotify == true' > /dev/null 2>&1; then
-          echo "Price alert triggered - Discord notification will be sent"
+          echo "Deal found - meets target price"
         else
-          echo "Price above target - no notification"
+          echo "No deal - above target price"
         fi
 
-    # Discord notification (only when price drops below target)
     - type: discord
       bot_token_env: DISCORD_BOT_TOKEN
       channel_id: "${DISCORD_CHANNEL_ID}"
