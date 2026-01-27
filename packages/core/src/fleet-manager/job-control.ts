@@ -621,7 +621,9 @@ export class JobControl {
 
   /**
    * Extract the final output from a job's JSONL file
-   * Looks for the last meaningful content: tool_result with result, or assistant message with content
+   *
+   * Prioritizes assistant text content over tool results since that's what
+   * humans care about - the agent's actual response, not raw tool output.
    */
   private async extractJobOutput(jobsDir: string, jobId: string): Promise<string> {
     const logger = this.ctx.getLogger();
@@ -629,23 +631,28 @@ export class JobControl {
     try {
       const messages = await readJobOutputAll(jobsDir, jobId, { logger });
 
-      // Work backwards through messages to find the last meaningful output
+      // Collect all assistant messages with text content (in order)
+      const assistantTexts: string[] = [];
+      for (const msg of messages) {
+        if (msg.type === "assistant" && "content" in msg && msg.content) {
+          assistantTexts.push(msg.content);
+        }
+      }
+
+      // Return the last assistant message if we have any
+      if (assistantTexts.length > 0) {
+        return assistantTexts[assistantTexts.length - 1];
+      }
+
+      // Fallback: look for tool_result with meaningful content
       for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i];
-
-        // Check for tool_result with a result field
         if (msg.type === "tool_result" && "result" in msg && msg.result !== undefined) {
           const result = msg.result;
           return typeof result === "string" ? result : JSON.stringify(result, null, 2);
         }
-
-        // Check for assistant message with content
-        if (msg.type === "assistant" && "content" in msg && msg.content) {
-          return msg.content;
-        }
       }
 
-      // Fallback to summary if no output found in messages
       return "";
     } catch (error) {
       logger.warn(`Failed to read job output for ${jobId}: ${(error as Error).message}`);

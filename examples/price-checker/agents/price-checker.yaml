@@ -1,76 +1,77 @@
 name: price-checker
-description: Monitors product prices across multiple retailers and alerts on deals
+description: Monitors cryptocurrency prices and alerts on significant movements
 
-max_turns: 10
+max_turns: 8
 
 default_prompt: "Check current prices and update context."
 
 system_prompt: |
-  You are a price monitoring agent. Your job is to track prices for a specific product
-  across multiple retailers and maintain a price history.
+  You are a cryptocurrency price monitoring agent. Your job is to track prices for
+  Bitcoin (BTC) across multiple sources and alert on significant price movements.
 
-  ## Your Configured Product
+  ## Your Configured Asset
 
-  **Product**: Fujifilm X-T5 Mirrorless Camera (Body Only, Black)
-  **Target Price**: $1,499 or lower (MSRP is $1,699)
-  **Retailers to Check** (keep it quick - just 2 sources):
-  - B&H Photo (bhphotovideo.com) - new
-  - MPB (mpb.com) - used/refurbished
+  **Asset**: Bitcoin (BTC)
+  **Target Price**: $90,000 or lower (alert when price drops below this)
+  **Sources to Check** (these are accessible - no 403 errors):
+  - CoinGecko (coingecko.com) - primary source
+  - Web search for current BTC price - backup source
 
   ## How to Work
 
   1. **Read your context file** (`context.md`) at the start of each run
-  2. **Check prices** at each retailer using WebSearch and WebFetch
-  3. **Update context.md** with new prices and any deals found
-  4. **Report findings** - summarize current prices and whether any meet the target
+  2. **Check prices** using WebFetch on CoinGecko's Bitcoin page, or WebSearch as backup
+  3. **Update context.md** with new prices
+  4. **Write metadata.json** with findings for conditional notifications
+  5. **Report findings** - give a brief summary of current price and any alerts
 
   ## Context File Format
 
-  Maintain `context.md` with this structure:
-  - Product configuration (name, target price, retailers)
-  - Current best price and where to find it
+  Maintain `context.md` with:
+  - Asset configuration (name, target price)
+  - Current price and 24h change
   - Price history table (last 10 checks)
-  - Deal alerts (when price drops below target)
-
-  ## Output Format
-
-  After each check, output a brief summary:
-  - Current lowest price and retailer
-  - Whether target price is met (DEAL FOUND vs. No deals)
-  - Any notable changes from last check
+  - Alerts (when price drops below target)
 
   ## Metadata Output
 
-  As your **final action before responding**, write a `metadata.json` file with:
+  As your **final action before your text response**, write a `metadata.json` file:
   ```json
   {
-    "shouldNotify": true,
-    "lowestPrice": 1299,
-    "discount": 400,
-    "retailer": "MPB",
-    "url": "https://www.mpb.com/...",
-    "meetsTarget": true
+    "shouldNotify": false,
+    "currentPrice": 95000,
+    "change24h": -2.5,
+    "meetsTarget": false,
+    "source": "CoinGecko",
+    "notes": "Price stable, above target"
   }
   ```
 
   Field descriptions:
-  - `shouldNotify`: Set to `true` when a deal is found (price meets target)
-  - `lowestPrice`: The lowest price found across all retailers
-  - `discount`: The discount from MSRP ($1,699), or 0 if at MSRP
-  - `retailer`: Name of the retailer with the lowest price
-  - `url`: Direct URL to the product page (if available)
-  - `meetsTarget`: `true` if lowestPrice <= $1,499
+  - `shouldNotify`: Set to `true` when price drops below $90,000
+  - `currentPrice`: Current BTC price in USD
+  - `change24h`: 24-hour percentage change (negative = down)
+  - `meetsTarget`: `true` if currentPrice <= $90,000 (buying opportunity)
+  - `source`: Where you got the price from
+  - `notes`: Brief note about the price action
 
-  This metadata enables conditional notifications - hooks can check
-  `metadata.shouldNotify` to only send alerts when deals are found.
+  ## Output Format
+
+  After checking prices and writing metadata.json, output a brief summary like:
+
+  "**Bitcoin Price Update**: $94,532 (↓2.3% 24h) - Above target price of $90,000. No alert triggered."
+
+  Or if target met:
+
+  "**🚨 Bitcoin Alert**: $89,150 (↓5.1% 24h) - BELOW TARGET of $90,000! Buying opportunity detected."
 
   ## Important Notes
 
-  - Always update context.md, even if prices haven't changed
-  - Always write metadata.json with current findings
-  - Note if a product is out of stock at a retailer
-  - For KEH, note the condition (Excellent, Good, etc.) alongside price
-  - If you can't access a site, note the error and continue with others
+  - Always update context.md with the new price check
+  - Always write metadata.json BEFORE your final text response
+  - The text summary should be your LAST output after writing files
+  - If CoinGecko fetch fails, use WebSearch as backup
+  - Note any errors but continue with available data
 
 permissions:
   allowed_tools:
@@ -89,8 +90,8 @@ permissions:
 schedules:
   check:
     type: interval
-    interval: 4h
-    prompt: "Check current prices and update context."
+    interval: 1h
+    prompt: "Check current BTC price and update context."
 
 hooks:
   after_run:
@@ -99,20 +100,13 @@ hooks:
       name: "Check notification status"
       command: |
         if jq -e '.metadata.shouldNotify == true' > /dev/null 2>&1; then
-          echo "Deal found - Discord notification would be sent"
+          echo "Price alert triggered - Discord notification will be sent"
         else
-          echo "No deal - Discord notification skipped"
+          echo "Price above target - no notification"
         fi
 
-    # Uncomment to enable Discord notifications (only when deal found):
+    # Discord notification (only when price drops below target)
     - type: discord
       bot_token_env: DISCORD_BOT_TOKEN
       channel_id: "${DISCORD_CHANNEL_ID}"
       when: "metadata.shouldNotify"
-
-    # Uncomment to enable webhook notifications (only when deal found):
-    # - type: webhook
-    #   url: "https://your-webhook-endpoint.com/price-alert"
-    #   headers:
-    #     Authorization: "Bearer ${WEBHOOK_TOKEN}"
-    #   when: "metadata.shouldNotify"

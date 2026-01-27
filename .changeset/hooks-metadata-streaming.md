@@ -15,3 +15,7 @@ Add hooks metadata feature and fix SDK message streaming
 - Fix content extraction from nested SDK message structure
 - Add support for `stream_event`, `tool_progress`, `auth_status` message types
 - Add `onMessage` callback to `TriggerOptions` for real-time message streaming
+
+**Output Extraction:**
+- Fix `extractJobOutput` to prefer assistant text over raw tool results
+- Discord notifications now show agent's text summary instead of JSON
