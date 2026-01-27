@@ -11,6 +11,7 @@ import {
   Client,
   GatewayIntentBits,
   Events,
+  Partials,
   type ClientOptions,
   type Message,
   type TextChannel,
@@ -190,12 +191,18 @@ export class DiscordConnector
 
     try {
       // Create client with necessary intents
+      // Note: Partials.Channel is required for DM support in discord.js v14+
+      // Without it, DM channels aren't cached and MessageCreate won't fire for DMs
       const clientOptions: ClientOptions = {
         intents: [
           GatewayIntentBits.Guilds,
           GatewayIntentBits.GuildMessages,
           GatewayIntentBits.DirectMessages,
           GatewayIntentBits.MessageContent,
+        ],
+        partials: [
+          Partials.Channel, // Required for DM support
+          Partials.Message, // Allows receiving uncached messages
         ],
       };
 
