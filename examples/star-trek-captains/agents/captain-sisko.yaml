@@ -63,9 +63,9 @@ chat:
     session_expiry_hours: 48
     log_level: standard
     guilds:
-      - id: "1091766033779523584"
+      - id: "${DISCORD_GUILD_ID}"
         channels:
-          - id: "1465888831764041858"
+          - id: "${DISCORD_CHANNEL_ID}"
             name: "#ready-room"
             mode: mention
             context_messages: 20

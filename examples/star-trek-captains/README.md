@@ -83,21 +83,26 @@ Enable Developer Mode in Discord, then right-click to copy:
 
 ### 4. Set Environment Variables
 
-```bash
-# Server IDs
-export DISCORD_GUILD_ID="your-server-id"
-export DISCORD_CHANNEL_ID="your-channel-id"
+The easiest approach is to create a `.env` file in this directory:
 
-# Bot Tokens (each captain has their own)
-export KIRK_BOT_TOKEN="token-for-kirk-bot"
-export PICARD_BOT_TOKEN="token-for-picard-bot"
-export JANEWAY_BOT_TOKEN="token-for-janeway-bot"
-export SISKO_BOT_TOKEN="token-for-sisko-bot"
-export SPOCK_BOT_TOKEN="token-for-spock-bot"
-export GORN_BOT_TOKEN="token-for-gorn-bot"
+```bash
+cp .env.example .env
+# Edit .env with your actual values
 ```
 
-Or use a `.env` file (see `.env.example`).
+Your `.env` file should contain:
+```env
+DISCORD_GUILD_ID=your-server-id
+DISCORD_CHANNEL_ID=your-channel-id
+KIRK_BOT_TOKEN=token-for-kirk-bot
+PICARD_BOT_TOKEN=token-for-picard-bot
+JANEWAY_BOT_TOKEN=token-for-janeway-bot
+SISKO_BOT_TOKEN=token-for-sisko-bot
+SPOCK_BOT_TOKEN=token-for-spock-bot
+GORN_BOT_TOKEN=token-for-gorn-bot
+```
+
+> **Note**: Shell environment variables take precedence over `.env` file values. If you've previously set `DISCORD_GUILD_ID` or `DISCORD_CHANNEL_ID` in your `.bashrc`/`.zshrc`, those values will override your `.env` file. Either remove them from your shell config, or simply don't set them in `.env`.
 
 ### 5. Run the Fleet
 
