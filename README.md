@@ -46,6 +46,47 @@ This is fleet management for AI agents. Not one agent, but dozens. Running in pa
 
 - **Bidirectional Communication** — Agents write structured data back to herdctl via metadata files. Hooks act on that data. Coming soon: agents that request schedule changes, store persistent context, and evolve their own behavior over time.
 
+## Intro Video
+
+In which we try to cover all of the main parts of herdctl in 20 minutes:
+
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=b3MRrpHLu8M">
+    <img src="https://img.youtube.com/vi/b3MRrpHLu8M/maxresdefault.jpg" alt="herdctl demo" width="600">
+  </a>
+  <p><em>Watch the demo</em></p>
+</div>
+
+## Quick Start
+
+```bash
+# Install herdctl globally
+npm install -g herdctl
+
+# Initialize a new project with example agents
+herdctl init
+
+# Start your agent fleet
+herdctl start
+```
+
+Your agents are now running. Check their status:
+
+```bash
+herdctl status
+```
+
+## Core Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Fleet** | A collection of agents running together, defined in `herdctl.yaml` |
+| **Agent** | An autonomous Claude Code instance with its own identity, schedule, and permissions |
+| **Schedule** | When an agent wakes up: interval (`5m`), cron (`0 9 * * *`), or on-demand |
+| **Trigger** | What starts a job: schedule tick, webhook, chat message, or manual `herdctl trigger` |
+| **Job** | A single execution of an agent, with start time, duration, output, and status |
+| **Session** | The Claude SDK conversation context, resumable by humans or continued in chat |
+
 ## Example Agents
 
 There's an essentially infinite number of Claude Code agents that would benefit from being invoked by means other than a human typing at a keyboard. Any task that's repetitive, time-sensitive, or benefits from continuous monitoring is a candidate. Here are a few examples to spark ideas:
@@ -116,36 +157,6 @@ A CTO agent could:
 
 This is future capability—agents that create, modify, and delete other agents will need proper access control and permissioning. But the architecture supports it. An agent is just a YAML file and a prompt. Another agent can write YAML files.
 
-## Quick Start
-
-```bash
-# Install herdctl globally
-npm install -g herdctl
-
-# Initialize a new project with example agents
-herdctl init
-
-# Start your agent fleet
-herdctl start
-```
-
-Your agents are now running. Check their status:
-
-```bash
-herdctl status
-```
-
-## Core Concepts
-
-| Concept | Description |
-|---------|-------------|
-| **Fleet** | A collection of agents running together, defined in `herdctl.yaml` |
-| **Agent** | An autonomous Claude Code instance with its own identity, schedule, and permissions |
-| **Schedule** | When an agent wakes up: interval (`5m`), cron (`0 9 * * *`), or on-demand |
-| **Trigger** | What starts a job: schedule tick, webhook, chat message, or manual `herdctl trigger` |
-| **Job** | A single execution of an agent, with start time, duration, output, and status |
-| **Session** | The Claude SDK conversation context, resumable by humans or continued in chat |
-
 ### Two Categories of Agents
 
 Every herdctl agent has a workspace directory. This creates two natural categories:
@@ -178,25 +189,6 @@ schedules:
 ```
 
 Each schedule can have its own prompt, permissions, and work source. An agent might do a deep review once daily but quick checks every 30 minutes.
-
-### Work Sources
-
-Agents can pull work from external systems instead of using static prompts:
-
-```yaml
-schedules:
-  process-issues:
-    type: interval
-    interval: 15m
-    work_source:
-      type: github_issues
-      repo: my-org/my-repo
-      labels:
-        include: ["ready-for-ai"]
-        exclude: ["blocked"]
-```
-
-When triggered, the agent receives the issue content as context and works on it autonomously.
 
 ## Chat Integration
 
