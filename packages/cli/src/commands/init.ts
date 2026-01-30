@@ -63,8 +63,7 @@ system_prompt: |
   analyze the task and provide a useful response.
 
 # Workspace - where the agent operates
-workspace:
-  path: ./workspace
+workspace: ./workspace
 
 # Schedules - when the agent runs
 schedules:
@@ -152,8 +151,7 @@ system_prompt: |
   analyze the requirements and implement the requested changes.
   Follow best practices and write clean, tested code.
 
-workspace:
-  path: ./workspace
+workspace: ./workspace
 
 schedules:
   process-issues:
