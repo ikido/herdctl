@@ -32,8 +32,8 @@ docker:
   volumes:
     - "/shared/data:/data:ro"
 
-  # Fresh container per job (recommended for production)
-  ephemeral: true
+  # Fresh container per job (default, can be omitted)
+  # ephemeral: true
 
 max_turns: 100
 default_prompt: "Process the next task from the queue."

@@ -94,7 +94,7 @@ docker:
 | `user` | string | Host UID:GID | Container user (e.g., `"1000:1000"`) |
 | `workspace_mode` | string | `rw` | Workspace mount: `rw` (read-write) or `ro` (read-only) |
 | `volumes` | array | `[]` | Additional volume mounts |
-| `ephemeral` | boolean | `false` | Fresh container per job vs reuse |
+| `ephemeral` | boolean | `true` | Fresh container per job vs reuse |
 | `max_containers` | integer | `5` | Container pool limit |
 
 ## Network Modes
@@ -283,45 +283,48 @@ This prevents issues when the same agent runs in both Docker and host modes.
 
 Control whether containers are reused or recreated per job.
 
-### Persistent Containers (Default)
+### Ephemeral Containers (Default)
 
 ```yaml
 docker:
   enabled: true
-  ephemeral: false  # Reuse containers (default)
+  # ephemeral: true is the default (can be omitted)
+```
+
+**Behavior:**
+- New container created for each job
+- Container removed after job completes (AutoRemove)
+- Clean state every run
+- No container accumulation
+- ~300-400ms overhead with cached images
+
+**Use for:**
+- Production environments (recommended)
+- Maximum isolation
+- Avoiding state leakage between jobs
+- Most use cases
+
+### Persistent Containers
+
+```yaml
+docker:
+  enabled: true
+  ephemeral: false  # Opt-in to container reuse
   max_containers: 5  # Keep last 5 containers
 ```
 
 **Behavior:**
 - Container created on first job
 - Reused for subsequent jobs (same agent)
-- Faster execution (no container startup)
+- Faster execution (~100-150ms overhead)
 - Containers kept for inspection
 - Old containers cleaned when limit reached
 
 **Use for:**
 - Development and debugging
-- Frequent jobs (interval schedules)
-- When startup time matters
-
-### Ephemeral Containers
-
-```yaml
-docker:
-  enabled: true
-  ephemeral: true  # Fresh container per job
-```
-
-**Behavior:**
-- New container created for each job
-- Container removed after job completes
-- Clean state every run
-- No container accumulation
-
-**Use for:**
-- Production environments
-- Maximum isolation
-- Avoiding state leakage between jobs
+- Very frequent jobs (every few seconds)
+- When startup time is critical
+- Preserving installed tools between runs
 
 ### Container Pool Management
 
@@ -388,7 +391,7 @@ docker:
   workspace_mode: ro         # Read-only workspace
   memory: "1g"               # Limited memory
   cpu_shares: 512            # Lower priority
-  ephemeral: true            # Fresh container each run
+  # ephemeral: true is default (fresh container each run)
   user: "1000:1000"          # Non-root user
 ```
 
@@ -403,8 +406,8 @@ docker:
   network: bridge            # Full network via NAT
   workspace_mode: rw         # Read-write workspace
   memory: "2g"               # Standard memory
-  ephemeral: false           # Reuse containers
-  max_containers: 5          # Keep last 5
+  ephemeral: false           # Opt-in to container reuse for speed
+  max_containers: 5          # Keep last 5 containers
 ```
 
 ### Development Configuration
@@ -417,8 +420,8 @@ docker:
   network: host              # Full network access
   workspace_mode: rw         # Read-write access
   memory: "4g"               # Generous memory
-  ephemeral: false           # Reuse for speed
-  max_containers: 10         # Keep more for debugging
+  ephemeral: false           # Opt-in to container reuse for faster iteration
+  max_containers: 10         # Keep more containers for debugging
   volumes:
     - "${HOME}/.cache:/cache:rw"  # Shared cache
 ```
@@ -499,7 +502,7 @@ See [Runtime Configuration](/configuration/runtime/) for runtime details.
 
 1. **Start with maximum isolation** — Use `network: none` + `workspace_mode: ro` initially
 2. **Relax as needed** — Only grant network/write access when required
-3. **Use ephemeral containers** — Enable `ephemeral: true` in production
+3. **Prefer ephemeral containers** — Default `ephemeral: true` provides best isolation (avoid `ephemeral: false` in production)
 4. **Set resource limits** — Always configure `memory` limits
 5. **Avoid host network** — Only use `network: host` for trusted agents
 6. **Match host user** — Keep default `user` setting for file permissions

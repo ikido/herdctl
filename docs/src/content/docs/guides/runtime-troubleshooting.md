@@ -385,13 +385,13 @@ docker:
 # BAD - Containers accumulate over time
 docker:
   enabled: true
-  ephemeral: false  # Containers kept after jobs
+  ephemeral: false  # Opt-in to container reuse
   max_containers: 100  # Eventually fills disk!
 
-# GOOD - Fresh containers per job
+# GOOD - Fresh containers per job (default)
 docker:
   enabled: true
-  ephemeral: true  # Auto-removed after job
+  # ephemeral: true is default - containers auto-removed after job
 ```
 
 ## Debugging Checklist

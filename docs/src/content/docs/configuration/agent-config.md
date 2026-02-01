@@ -615,7 +615,7 @@ docker:
 | `user` | string | Host UID:GID | Container user |
 | `workspace_mode` | string | `rw` | Workspace mount: `rw` or `ro` |
 | `volumes` | array | `[]` | Additional volume mounts |
-| `ephemeral` | boolean | `false` | Fresh container per job |
+| `ephemeral` | boolean | `true` | Fresh container per job |
 | `max_containers` | integer | `5` | Container pool limit |
 
 See [Docker Configuration](/configuration/docker/) for security model and detailed options.
