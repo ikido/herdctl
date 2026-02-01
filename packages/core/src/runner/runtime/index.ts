@@ -28,3 +28,18 @@ export {
   CLISessionWatcher,
   watchSessionFile,
 } from "./cli-session-watcher.js";
+
+// Docker configuration
+export {
+  type DockerConfig,
+  type PathMapping,
+  type NetworkMode,
+  type VolumeMode,
+  parseMemoryToBytes,
+  parseVolumeMount,
+  getHostUser,
+  resolveDockerConfig,
+  DEFAULT_DOCKER_IMAGE,
+  DEFAULT_MEMORY_LIMIT,
+  DEFAULT_MAX_CONTAINERS,
+} from "./docker-config.js";
