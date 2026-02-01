@@ -10,14 +10,14 @@
 
 import type { ResolvedAgent, Schedule } from "../config/index.js";
 import type { ScheduleState } from "../state/schemas/fleet-state.js";
-import type { RunnerResult, SDKQueryFunction } from "../runner/index.js";
+import type { RunnerResult } from "../runner/index.js";
 import type {
   WorkSourceManager,
   WorkItem,
   WorkResult,
   WorkOutcome,
 } from "../work-sources/index.js";
-import { JobExecutor, type JobExecutorOptions } from "../runner/index.js";
+import { JobExecutor, RuntimeFactory, type JobExecutorOptions } from "../runner/index.js";
 import {
   updateScheduleState,
   type ScheduleStateLogger,
@@ -67,8 +67,6 @@ export interface RunScheduleOptions {
   scheduleState: ScheduleState;
   /** Path to the state directory (e.g., .herdctl) */
   stateDir: string;
-  /** The SDK query function for agent execution */
-  sdkQuery: SDKQueryFunction;
   /** Optional work source manager for fetching work items */
   workSourceManager?: WorkSourceManager;
   /** Optional logger */
@@ -214,7 +212,6 @@ function formatWorkItem(workItem: WorkItem): string {
  *   schedule: { type: 'interval', interval: '1h', prompt: 'Check status' },
  *   scheduleState: { status: 'idle', last_run_at: null },
  *   stateDir: '.herdctl',
- *   sdkQuery: query,
  * });
  *
  * console.log(`Job ${result.jobId} completed: ${result.success}`);
@@ -250,7 +247,6 @@ export async function runSchedule(
     scheduleName,
     schedule,
     stateDir,
-    sdkQuery,
     workSourceManager,
     logger = defaultLogger,
     executorOptions,
@@ -320,7 +316,8 @@ export async function runSchedule(
     }
 
     // Step 5: Execute the agent via JobExecutor
-    const executor = new JobExecutor(sdkQuery, executorOptions);
+    const runtime = RuntimeFactory.create(agent);
+    const executor = new JobExecutor(runtime, executorOptions);
 
     const runnerResult = await executor.execute({
       agent,
