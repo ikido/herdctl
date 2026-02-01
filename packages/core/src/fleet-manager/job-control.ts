@@ -10,9 +10,8 @@
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 
-import { query as claudeSdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { createJob, getJob, updateJob, readJobOutputAll } from "../state/index.js";
-import { JobExecutor, type SDKQueryFunction } from "../runner/index.js";
+import { JobExecutor, RuntimeFactory } from "../runner/index.js";
 import { HookExecutor, type HookContext } from "../hooks/index.js";
 import type { ResolvedAgent, HookEvent } from "../config/index.js";
 import type { JobMetadata } from "../state/schemas/job-metadata.js";
@@ -34,9 +33,6 @@ import {
   JobCancelError,
   JobForkError,
 } from "./errors.js";
-
-// Cast the SDK query function to our internal type
-const sdkQuery = claudeSdkQuery as unknown as SDKQueryFunction;
 
 // =============================================================================
 // JobControl Class
@@ -134,7 +130,8 @@ export class JobControl {
     );
 
     // Create the JobExecutor and execute the job
-    const executor = new JobExecutor(sdkQuery, { logger });
+    const runtime = RuntimeFactory.create(agent);
+    const executor = new JobExecutor(runtime, { logger });
 
     // Execute the job - this creates the job record and runs it
     // Note: Job output is written to JSONL by JobExecutor; log streaming picks it up

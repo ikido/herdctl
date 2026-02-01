@@ -13,18 +13,13 @@
  */
 
 import { join, dirname } from "node:path";
-import { query as claudeSdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { TriggerInfo } from "../scheduler/index.js";
 import type { ResolvedAgent, HookEvent } from "../config/index.js";
-import { JobExecutor, type SDKMessage, type SDKQueryFunction } from "../runner/index.js";
+import { JobExecutor, RuntimeFactory, type SDKMessage } from "../runner/index.js";
 import { getJob } from "../state/index.js";
 import type { JobMetadata } from "../state/schemas/job-metadata.js";
 import { HookExecutor, type HookContext } from "../hooks/index.js";
 import type { FleetManagerContext } from "./context.js";
-
-// Cast the SDK query function to our internal type
-// The SDK types are slightly different but runtime-compatible
-const sdkQuery = claudeSdkQuery as unknown as SDKQueryFunction;
 import type {
   JobCreatedPayload,
   JobOutputPayload,
@@ -93,8 +88,9 @@ export class ScheduleExecutor {
           `(type: ${schedule.type}, prompt: ${prompt.slice(0, 50)}...)`
       );
 
-      // Create the JobExecutor with the Claude SDK query function
-      const executor = new JobExecutor(sdkQuery, {
+      // Create the JobExecutor with the runtime
+      const runtime = RuntimeFactory.create(agent);
+      const executor = new JobExecutor(runtime, {
         logger,
       });
 
