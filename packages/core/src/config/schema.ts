@@ -678,6 +678,7 @@ export type GitHubWorkSource = z.infer<typeof GitHubWorkSourceSchema>;
 export type BaseWorkSource = z.infer<typeof BaseWorkSourceSchema>;
 export type WorkSource = z.infer<typeof WorkSourceSchema>;
 export type Instances = z.infer<typeof InstancesSchema>;
+export type DockerInput = z.input<typeof DockerSchema>;
 export type Docker = z.infer<typeof DockerSchema>;
 export type Defaults = z.infer<typeof DefaultsSchema>;
 export type Workspace = z.infer<typeof WorkspaceSchema>;

@@ -139,7 +139,7 @@ describe("RuntimeFactory Integration", () => {
         docker: {
           enabled: true,
           image: "alpine:latest",
-        },
+        } as any,
       });
 
       const runtime = RuntimeFactory.create(agent, { stateDir: tempDir });
@@ -154,7 +154,7 @@ describe("RuntimeFactory Integration", () => {
         docker: {
           enabled: true,
           image: "alpine:latest",
-        },
+        } as any,
       });
 
       const runtime = RuntimeFactory.create(agent, { stateDir: tempDir });
@@ -170,7 +170,7 @@ describe("RuntimeFactory Integration", () => {
         docker: {
           enabled: true,
           image: "alpine:latest",
-        },
+        } as any,
       });
 
       // Just verify RuntimeFactory accepts stateDir
@@ -183,7 +183,7 @@ describe("RuntimeFactory Integration", () => {
         docker: {
           enabled: true,
           image: "alpine:latest",
-        },
+        } as any,
       });
 
       // Should not throw even without stateDir (uses default)
@@ -232,7 +232,7 @@ describe("Path Translation", () => {
       docker: {
         enabled: true,
         image: "alpine:latest",
-      },
+      } as any,
     });
 
     const runtime = RuntimeFactory.create(agent, { stateDir });
@@ -257,6 +257,9 @@ describe("Path Translation", () => {
       runtime: "sdk",
       workspace: {
         root: "/path/to/workspace",
+        auto_clone: true,
+        clone_depth: 1,
+        default_branch: "main",
       },
     });
 
@@ -327,7 +330,7 @@ describe("Runtime Interface Compliance", () => {
       docker: {
         enabled: true,
         image: "alpine:latest",
-      },
+      } as any,
     });
 
     const runtime = RuntimeFactory.create(agent);

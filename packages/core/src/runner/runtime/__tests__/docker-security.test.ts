@@ -182,6 +182,9 @@ describeDocker("Docker Security Hardening", () => {
       const agent = createTestAgent({
         workspace: {
           root: "/path/to/workspace",
+          auto_clone: true,
+          clone_depth: 1,
+          default_branch: "main",
         },
       });
       const dockerConfig = resolveDockerConfig({ enabled: true });

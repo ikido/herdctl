@@ -224,7 +224,7 @@ export class JobExecutor {
             job_count: existingSession.job_count,
             mode: existingSession.mode,
           });
-          this.logger.debug?.(
+          this.logger.info?.(
             `Refreshed session timestamp for ${agent.name} before execution`
           );
         } catch (updateError) {

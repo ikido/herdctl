@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { RuntimeFactory } from "../factory.js";
 import type { ResolvedAgent } from "../../../config/index.js";
+import type { DockerInput } from "../../../config/schema.js";
 
 // =============================================================================
 // Test Helpers
@@ -11,7 +12,7 @@ function createTestAgent(overrides: Partial<ResolvedAgent> = {}): ResolvedAgent 
     name: "test-agent",
     configPath: "/path/to/agent.yaml",
     ...overrides,
-  };
+  } as ResolvedAgent;
 }
 
 // =============================================================================
@@ -58,7 +59,7 @@ describe("RuntimeFactory", () => {
     it("returns base runtime when docker not enabled", () => {
       const agent = createTestAgent({
         runtime: "sdk",
-        docker: { enabled: false },
+        docker: { enabled: false } as any,
       });
       const runtime = RuntimeFactory.create(agent);
 
@@ -79,7 +80,7 @@ describe("RuntimeFactory", () => {
     it("wraps with ContainerRunner when docker.enabled is true", () => {
       const agent = createTestAgent({
         runtime: "sdk",
-        docker: { enabled: true },
+        docker: { enabled: true } as any,
       });
       const runtime = RuntimeFactory.create(agent, {
         stateDir: "/test/.herdctl",
@@ -92,7 +93,7 @@ describe("RuntimeFactory", () => {
     it("passes stateDir to ContainerRunner", () => {
       const agent = createTestAgent({
         runtime: "sdk",
-        docker: { enabled: true },
+        docker: { enabled: true } as any,
       });
       const customStateDir = "/custom/state/dir";
       const runtime = RuntimeFactory.create(agent, {
@@ -107,7 +108,7 @@ describe("RuntimeFactory", () => {
     it("uses default stateDir when not provided", () => {
       const agent = createTestAgent({
         runtime: "sdk",
-        docker: { enabled: true },
+        docker: { enabled: true } as any,
       });
       const runtime = RuntimeFactory.create(agent);
 
@@ -122,7 +123,7 @@ describe("RuntimeFactory", () => {
     it("wraps SDK with Docker", () => {
       const agent = createTestAgent({
         runtime: "sdk",
-        docker: { enabled: true },
+        docker: { enabled: true } as any,
       });
       const runtime = RuntimeFactory.create(agent, {
         stateDir: "/test/.herdctl",
@@ -137,7 +138,7 @@ describe("RuntimeFactory", () => {
     it("wraps CLI with Docker", () => {
       const agent = createTestAgent({
         runtime: "cli",
-        docker: { enabled: true },
+        docker: { enabled: true } as any,
       });
       const runtime = RuntimeFactory.create(agent, {
         stateDir: "/test/.herdctl",
@@ -152,7 +153,7 @@ describe("RuntimeFactory", () => {
     it("CLI without Docker is unwrapped", () => {
       const agent = createTestAgent({
         runtime: "cli",
-        docker: { enabled: false },
+        docker: { enabled: false } as any,
       });
       const runtime = RuntimeFactory.create(agent);
 
@@ -168,7 +169,7 @@ describe("RuntimeFactory", () => {
           network: "none",
           memory: "4g",
           ephemeral: true,
-        },
+        } as any,
       });
       const runtime = RuntimeFactory.create(agent, {
         stateDir: "/test/.herdctl",

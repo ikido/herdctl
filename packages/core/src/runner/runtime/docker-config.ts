@@ -5,7 +5,7 @@
  * and utility functions for path mapping and container management.
  */
 
-import type { Docker } from "../../config/schema.js";
+import type { Docker, DockerInput } from "../../config/schema.js";
 
 /**
  * Network isolation modes for Docker containers
@@ -148,7 +148,7 @@ export function getHostUser(): string {
  * @param docker - Docker configuration from agent config (may be partial)
  * @returns Fully resolved DockerConfig
  */
-export function resolveDockerConfig(docker?: Docker): DockerConfig {
+export function resolveDockerConfig(docker?: DockerInput): DockerConfig {
   return {
     enabled: docker?.enabled ?? false,
     ephemeral: docker?.ephemeral ?? false,
