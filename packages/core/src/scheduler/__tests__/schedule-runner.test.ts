@@ -6,7 +6,7 @@ import {
   afterEach,
   vi,
 } from "vitest";
-import { mkdir, rm, realpath } from "node:fs/promises";
+import { mkdir, rm, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -25,6 +25,7 @@ import type {
   WorkResult,
 } from "../../work-sources/index.js";
 import { readFleetState } from "../../state/fleet-state.js";
+import { getSessionInfo } from "../../state/index.js";
 
 // Helper to create a temp directory
 async function createTempDir(): Promise<string> {
