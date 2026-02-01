@@ -68,9 +68,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md - Extend DockerSchema with full configuration options, create docker-config.ts types
-- [ ] 03-02-PLAN.md - Implement ContainerRunner decorator and ContainerManager lifecycle
-- [ ] 03-03-PLAN.md - Integrate ContainerRunner into RuntimeFactory, wire up stateDir
+- [x] 03-01-PLAN.md - Extend DockerSchema with full configuration options, create docker-config.ts types
+- [x] 03-02-PLAN.md - Implement ContainerRunner decorator and ContainerManager lifecycle
+- [x] 03-03-PLAN.md - Integrate ContainerRunner into RuntimeFactory, wire up stateDir
 
 ### Phase 4: Documentation & Testing
 **Goal**: Complete production-ready documentation and comprehensive test coverage
@@ -85,10 +85,13 @@ Plans:
   6. Integration tests verify SDK runtime, CLI runtime, and Docker execution end-to-end
   7. Tests validate path translation correctness between host and container
   8. All tests pass with no regressions in existing functionality
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 04-01: TBD during planning
+- [ ] 04-01-PLAN.md - Create runtime and Docker configuration documentation
+- [ ] 04-02-PLAN.md - Create example configurations and troubleshooting guide
+- [ ] 04-03-PLAN.md - Create unit tests for runtime implementations
+- [ ] 04-04-PLAN.md - Create integration tests and Docker security validation
 
 ## Progress
 
@@ -100,4 +103,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | 1. Runtime Abstraction Foundation | 2/2 | ✓ Complete | 2026-02-01 |
 | 2. CLI Runtime Implementation | 3/3 | ✓ Complete | 2026-02-01 |
 | 3. Docker Integration | 3/3 | ✓ Complete | 2026-02-01 |
-| 4. Documentation & Testing | 0/TBD | Not started | - |
+| 4. Documentation & Testing | 0/4 | Not started | - |
