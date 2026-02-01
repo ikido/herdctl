@@ -492,6 +492,14 @@ export const AgentConfigSchema = z
      * Default: ["project"] when workspace is set, [] otherwise
      */
     setting_sources: z.array(z.enum(["user", "project", "local"])).optional(),
+    /**
+     * Runtime backend for executing Claude agents
+     * - "sdk" - Claude Agent SDK (default, standard pricing)
+     * - "cli" - Claude CLI (Max plan pricing, Phase 2)
+     *
+     * Default: "sdk"
+     */
+    runtime: z.enum(["sdk", "cli"]).optional(),
   })
   .strict();
 
