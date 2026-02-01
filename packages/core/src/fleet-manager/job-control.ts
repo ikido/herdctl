@@ -10,7 +10,7 @@
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 
-import { createJob, getJob, updateJob, readJobOutputAll } from "../state/index.js";
+import { createJob, getJob, updateJob, readJobOutputAll, getSessionInfo } from "../state/index.js";
 import { JobExecutor, RuntimeFactory } from "../runner/index.js";
 import { HookExecutor, type HookContext } from "../hooks/index.js";
 import type { ResolvedAgent, HookEvent } from "../config/index.js";
@@ -129,6 +129,30 @@ export class JobControl {
       `Manually triggered ${agentName}${scheduleName ? `/${scheduleName}` : ""}`
     );
 
+    // Get existing session for conversation continuity (unless explicitly provided)
+    // This prevents unexpected logouts by automatically resuming the agent's session
+    let sessionId = options?.resume;
+    if (!sessionId) {
+      try {
+        const sessionsDir = join(stateDir, "sessions");
+        // Use session timeout config for expiry validation (default: 24h)
+        const sessionTimeout = agent.session?.timeout ?? "24h";
+        const existingSession = await getSessionInfo(sessionsDir, agent.name, {
+          timeout: sessionTimeout,
+          logger,
+        });
+        if (existingSession?.session_id) {
+          sessionId = existingSession.session_id;
+          logger.debug(`Found valid session for ${agent.name}: ${sessionId}`);
+        }
+      } catch (error) {
+        logger.warn(
+          `Failed to get session info for ${agent.name}: ${(error as Error).message}`
+        );
+        // Continue without resume - session failure shouldn't block execution
+      }
+    }
+
     // Create the JobExecutor and execute the job
     const runtime = RuntimeFactory.create(agent, { stateDir });
     const executor = new JobExecutor(runtime, { logger });
@@ -144,7 +168,7 @@ export class JobControl {
       schedule: scheduleName,
       outputToFile: schedule?.outputToFile ?? false,
       onMessage: options?.onMessage,
-      resume: options?.resume,
+      resume: sessionId,
     });
 
     // Emit job:created event

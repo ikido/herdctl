@@ -39,7 +39,6 @@ import {
   updateSessionInfo,
   getSessionInfo,
   clearSession,
-  validateSession,
   isSessionExpiredError,
   type JobMetadata,
   type TriggerType,
@@ -198,32 +197,200 @@ export class JobExecutor {
 
     // Step 3.5: Validate session if resuming
     // This prevents unexpected logouts by checking session expiration before attempting resume
-    let effectiveResume = options.resume;
-    if (effectiveResume) {
+    // Pass timeout to getSessionInfo so expired sessions are automatically cleared (consistent with schedule-runner.ts)
+    let effectiveResume: string | undefined;
+    if (options.resume) {
       const sessionsDir = join(stateDir, "sessions");
-      const existingSession = await getSessionInfo(sessionsDir, agent.name);
-      const sessionTimeout = agent.session?.timeout;
+      // Default to 24h if not configured - prevents unexpected logouts from expired server-side sessions
+      const sessionTimeout = agent.session?.timeout ?? "24h";
+      const existingSession = await getSessionInfo(sessionsDir, agent.name, {
+        timeout: sessionTimeout,
+        logger: this.logger,
+      });
 
-      const validation = validateSession(existingSession, sessionTimeout);
+      if (existingSession?.session_id) {
+        // Use the actual session ID from the stored session, not the original options.resume value
+        // This ensures we always use the correct session ID stored on disk
+        effectiveResume = existingSession.session_id;
+        this.logger.info?.(
+          `Found valid session for ${agent.name}: ${effectiveResume}, will attempt to resume`
+        );
 
-      if (!validation.valid) {
-        this.logger.warn(
-          `Session validation failed for ${agent.name}: ${validation.message}. Starting fresh session.`
+        // Update last_used_at NOW to prevent session from expiring during long-running jobs
+        // This fixes the authentication bug where sessions could expire mid-execution
+        try {
+          await updateSessionInfo(sessionsDir, agent.name, {
+            session_id: existingSession.session_id,
+            job_count: existingSession.job_count,
+            mode: existingSession.mode,
+          });
+          this.logger.debug?.(
+            `Refreshed session timestamp for ${agent.name} before execution`
+          );
+        } catch (updateError) {
+          this.logger.warn(
+            `Failed to refresh session timestamp: ${(updateError as Error).message}`
+          );
+          // Continue anyway - the session is still valid for now
+        }
+      } else {
+        this.logger.info?.(
+          `No valid session for ${agent.name} (expired or not found), starting fresh`
         );
 
         // Write info to job output
         try {
           await appendJobOutput(jobsDir, job.id, {
             type: "system",
-            content: `Session expired or invalid: ${validation.message}. Starting fresh session.`,
+            content: `No valid session found (expired or missing). Starting fresh session.`,
           });
         } catch {
           // Ignore output write failures
         }
 
-        // Clear the expired session
-        if (existingSession) {
+        // Don't resume - start fresh (effectiveResume stays undefined)
+      }
+    }
+
+    // Step 4: Execute agent and stream output
+    // Track whether we've already retried after a session expiration
+    let retriedAfterSessionExpiry = false;
+
+    const executeWithRetry = async (resumeSessionId: string | undefined): Promise<void> => {
+      try {
+        let messages: AsyncIterable<SDKMessage>;
+
+        // Catch runtime initialization errors
+        try {
+          messages = this.runtime.execute({
+            prompt,
+            agent: options.agent,
+            resume: resumeSessionId,
+            fork: options.fork ? true : undefined,
+            abortController: options.abortController,
+          });
+        } catch (initError) {
+          // Wrap initialization errors with context
+          throw new SDKInitializationError(
+            buildErrorMessage((initError as Error).message, {
+              jobId: job.id,
+              agentName: agent.name,
+            }),
+            {
+              jobId: job.id,
+              agentName: agent.name,
+              cause: initError as Error,
+            }
+          );
+        }
+
+        for await (const sdkMessage of messages) {
+          messagesReceived++;
+
+          // Process the message safely (handles malformed responses)
+          let processed;
           try {
+            processed = processSDKMessage(sdkMessage);
+          } catch (processError) {
+            // Log but don't crash on malformed messages
+            this.logger.warn(
+              `Malformed SDK message received: ${(processError as Error).message}`
+            );
+
+            // Write a warning to job output
+            try {
+              await appendJobOutput(jobsDir, job.id, {
+                type: "error",
+                message: `Malformed SDK message: ${(processError as Error).message}`,
+                code: "MALFORMED_MESSAGE",
+              });
+            } catch {
+              // Ignore output write failures for malformed message warnings
+            }
+
+            // Continue processing other messages
+            continue;
+          }
+
+          // Write to job output immediately (no buffering)
+          try {
+            await appendJobOutput(jobsDir, job.id, processed.output);
+          } catch (outputError) {
+            this.logger.warn(
+              `Failed to write job output: ${(outputError as Error).message}`
+            );
+            // Continue processing - don't fail execution due to logging issues
+          }
+
+          // Also write to output.log file if outputToFile is enabled
+          if (outputLogPath) {
+            try {
+              const logLine = this.formatOutputLogLine(processed.output);
+              if (logLine) {
+                await appendFile(outputLogPath, logLine + "\n", "utf-8");
+              }
+            } catch (fileError) {
+              this.logger.warn(
+                `Failed to write to output log file: ${(fileError as Error).message}`
+              );
+              // Continue processing - file logging is optional
+            }
+          }
+
+          // Extract session ID if present
+          if (processed.sessionId) {
+            sessionId = processed.sessionId;
+          }
+
+          // Extract summary if present
+          const messageSummary = extractSummary(sdkMessage);
+          if (messageSummary) {
+            summary = messageSummary;
+          }
+
+          // Call user's onMessage callback if provided
+          if (onMessage) {
+            try {
+              await onMessage(sdkMessage);
+            } catch (callbackError) {
+              this.logger.warn(
+                `onMessage callback error: ${(callbackError as Error).message}`
+              );
+            }
+          }
+
+          // Check for terminal messages
+          if (isTerminalMessage(sdkMessage)) {
+            if (sdkMessage.type === "error") {
+              const errorMessage =
+                (sdkMessage.message as string) ?? "Agent execution failed";
+              lastError = new SDKStreamingError(
+                buildErrorMessage(errorMessage, {
+                  jobId: job.id,
+                  agentName: agent.name,
+                }),
+                {
+                  jobId: job.id,
+                  agentName: agent.name,
+                  code: sdkMessage.code as string | undefined,
+                  messagesReceived,
+                }
+              );
+            }
+            break;
+          }
+        }
+      } catch (error) {
+        // Check if this is a session expiration error from the SDK
+        // This can happen if the server-side session expired even though local validation passed
+        if (isSessionExpiredError(error as Error) && resumeSessionId && !retriedAfterSessionExpiry) {
+          this.logger.warn(
+            `Session expired on server for ${agent.name}. Clearing session and retrying with fresh session.`
+          );
+
+          // Clear the expired session
+          try {
+            const sessionsDir = join(stateDir, "sessions");
             await clearSession(sessionsDir, agent.name);
             this.logger.info?.(`Cleared expired session for ${agent.name}`);
           } catch (clearError) {
@@ -231,192 +398,58 @@ export class JobExecutor {
               `Failed to clear expired session: ${(clearError as Error).message}`
             );
           }
-        }
 
-        // Don't resume - start fresh
-        effectiveResume = undefined;
-      } else if (existingSession) {
-        this.logger.info?.(
-          `Session for ${agent.name} is valid (age: ${Math.round((validation.ageMs ?? 0) / 60000)}m, timeout: ${Math.round((validation.timeoutMs ?? 0) / 60000)}m)`
-        );
-      }
-    }
-
-    // Step 4: Execute agent and stream output
-    try {
-      let messages: AsyncIterable<SDKMessage>;
-
-      // Catch runtime initialization errors
-      try {
-        messages = this.runtime.execute({
-          prompt,
-          agent: options.agent,
-          resume: effectiveResume,
-          fork: options.fork ? true : undefined,
-          abortController: options.abortController,
-        });
-      } catch (initError) {
-        // Wrap initialization errors with context
-        throw new SDKInitializationError(
-          buildErrorMessage((initError as Error).message, {
-            jobId: job.id,
-            agentName: agent.name,
-          }),
-          {
-            jobId: job.id,
-            agentName: agent.name,
-            cause: initError as Error,
-          }
-        );
-      }
-
-      for await (const sdkMessage of messages) {
-        messagesReceived++;
-
-        // Process the message safely (handles malformed responses)
-        let processed;
-        try {
-          processed = processSDKMessage(sdkMessage);
-        } catch (processError) {
-          // Log but don't crash on malformed messages
-          this.logger.warn(
-            `Malformed SDK message received: ${(processError as Error).message}`
-          );
-
-          // Write a warning to job output
+          // Write info to job output about the retry
           try {
             await appendJobOutput(jobsDir, job.id, {
-              type: "error",
-              message: `Malformed SDK message: ${(processError as Error).message}`,
-              code: "MALFORMED_MESSAGE",
+              type: "system",
+              content: `Session expired on server. Retrying with fresh session.`,
             });
           } catch {
-            // Ignore output write failures for malformed message warnings
+            // Ignore output write failures
           }
 
-          // Continue processing other messages
-          continue;
+          // Retry with a fresh session (no resume)
+          retriedAfterSessionExpiry = true;
+          messagesReceived = 0; // Reset for fresh session
+          await executeWithRetry(undefined);
+          return;
         }
 
-        // Write to job output immediately (no buffering)
+        // Wrap the error with context if not already a RunnerError
+        lastError = wrapError(error, {
+          jobId: job.id,
+          agentName: agent.name,
+          phase: messagesReceived === 0 ? "init" : "streaming",
+        });
+
+        // Add messages received count for streaming errors
+        if (lastError instanceof SDKStreamingError && messagesReceived > 0) {
+          (lastError as SDKStreamingError & { messagesReceived?: number }).messagesReceived = messagesReceived;
+        }
+
+        // Log the error with context
+        this.logger.error(
+          `${lastError.name}: ${lastError.message}`
+        );
+
+        // Write error to job output with full context
         try {
-          await appendJobOutput(jobsDir, job.id, processed.output);
+          await appendJobOutput(jobsDir, job.id, {
+            type: "error",
+            message: lastError.message,
+            code: (lastError as SDKStreamingError).code ?? (lastError.cause as NodeJS.ErrnoException)?.code,
+            stack: lastError.stack,
+          });
         } catch (outputError) {
           this.logger.warn(
-            `Failed to write job output: ${(outputError as Error).message}`
-          );
-          // Continue processing - don't fail execution due to logging issues
-        }
-
-        // Also write to output.log file if outputToFile is enabled
-        if (outputLogPath) {
-          try {
-            const logLine = this.formatOutputLogLine(processed.output);
-            if (logLine) {
-              await appendFile(outputLogPath, logLine + "\n", "utf-8");
-            }
-          } catch (fileError) {
-            this.logger.warn(
-              `Failed to write to output log file: ${(fileError as Error).message}`
-            );
-            // Continue processing - file logging is optional
-          }
-        }
-
-        // Extract session ID if present
-        if (processed.sessionId) {
-          sessionId = processed.sessionId;
-        }
-
-        // Extract summary if present
-        const messageSummary = extractSummary(sdkMessage);
-        if (messageSummary) {
-          summary = messageSummary;
-        }
-
-        // Call user's onMessage callback if provided
-        if (onMessage) {
-          try {
-            await onMessage(sdkMessage);
-          } catch (callbackError) {
-            this.logger.warn(
-              `onMessage callback error: ${(callbackError as Error).message}`
-            );
-          }
-        }
-
-        // Check for terminal messages
-        if (isTerminalMessage(sdkMessage)) {
-          if (sdkMessage.type === "error") {
-            const errorMessage =
-              (sdkMessage.message as string) ?? "Agent execution failed";
-            lastError = new SDKStreamingError(
-              buildErrorMessage(errorMessage, {
-                jobId: job.id,
-                agentName: agent.name,
-              }),
-              {
-                jobId: job.id,
-                agentName: agent.name,
-                code: sdkMessage.code as string | undefined,
-                messagesReceived,
-              }
-            );
-          }
-          break;
-        }
-      }
-    } catch (error) {
-      // Wrap the error with context if not already a RunnerError
-      lastError = wrapError(error, {
-        jobId: job.id,
-        agentName: agent.name,
-        phase: messagesReceived === 0 ? "init" : "streaming",
-      });
-
-      // Add messages received count for streaming errors
-      if (lastError instanceof SDKStreamingError && messagesReceived > 0) {
-        (lastError as SDKStreamingError & { messagesReceived?: number }).messagesReceived = messagesReceived;
-      }
-
-      // Check if this is a session expiration error from the SDK
-      // This can happen if the server-side session expired even though local validation passed
-      if (isSessionExpiredError(error as Error)) {
-        this.logger.warn(
-          `Session expired on server for ${agent.name}. The session will be cleared.`
-        );
-
-        // Clear the expired session so the next run starts fresh
-        try {
-          const sessionsDir = join(stateDir, "sessions");
-          await clearSession(sessionsDir, agent.name);
-          this.logger.info?.(`Cleared expired session for ${agent.name}`);
-        } catch (clearError) {
-          this.logger.warn(
-            `Failed to clear expired session: ${(clearError as Error).message}`
+            `Failed to write error to job output: ${(outputError as Error).message}`
           );
         }
       }
+    };
 
-      // Log the error with context
-      this.logger.error(
-        `${lastError.name}: ${lastError.message}`
-      );
-
-      // Write error to job output with full context
-      try {
-        await appendJobOutput(jobsDir, job.id, {
-          type: "error",
-          message: lastError.message,
-          code: (lastError as SDKStreamingError).code ?? (lastError.cause as NodeJS.ErrnoException)?.code,
-          stack: lastError.stack,
-        });
-      } catch (outputError) {
-        this.logger.warn(
-          `Failed to write error to job output: ${(outputError as Error).message}`
-        );
-      }
-    }
+    await executeWithRetry(effectiveResume);
 
     // Build error details for programmatic access
     if (lastError) {
