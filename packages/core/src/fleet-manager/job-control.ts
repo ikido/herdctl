@@ -130,7 +130,7 @@ export class JobControl {
     );
 
     // Create the JobExecutor and execute the job
-    const runtime = RuntimeFactory.create(agent);
+    const runtime = RuntimeFactory.create(agent, { stateDir });
     const executor = new JobExecutor(runtime, { logger });
 
     // Execute the job - this creates the job record and runs it
