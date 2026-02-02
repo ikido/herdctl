@@ -19,6 +19,7 @@ import type { RuntimeInterface, RuntimeExecuteOptions } from "./interface.js";
 import type { SDKMessage } from "../types.js";
 import {
   getCliSessionDir,
+  getCliSessionFile,
   findNewestSessionFile,
 } from "./cli-session-path.js";
 import { CLISessionWatcher } from "./cli-session-watcher.js";
@@ -110,11 +111,16 @@ export class CLIRuntime implements RuntimeInterface {
         cancelSignal: options.abortController?.signal,
       });
 
-      // Wait for session file to be created (claude creates it almost immediately)
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Find the newest session file (the one just created)
-      const sessionFilePath = await findNewestSessionFile(sessionDir);
+      // Determine which session file to watch
+      let sessionFilePath: string;
+      if (options.resume) {
+        // When resuming, use the known session ID
+        sessionFilePath = getCliSessionFile(cwd, options.resume);
+      } else {
+        // When starting new session, wait for file creation and find newest
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        sessionFilePath = await findNewestSessionFile(sessionDir);
+      }
 
       // Watch the session file for messages
       watcher = new CLISessionWatcher(sessionFilePath);
