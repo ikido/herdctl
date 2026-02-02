@@ -403,7 +403,7 @@ describe("resolveDockerConfig", () => {
 
 describe("constants", () => {
   it("DEFAULT_DOCKER_IMAGE is set correctly", () => {
-    expect(DEFAULT_DOCKER_IMAGE).toBe("anthropic/claude-code:latest");
+    expect(DEFAULT_DOCKER_IMAGE).toBe("herdctl/runtime:latest");
   });
 
   it("DEFAULT_MEMORY_LIMIT is 2g", () => {

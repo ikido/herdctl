@@ -122,28 +122,28 @@ describeDocker("Docker Security Hardening", () => {
       expect(workspaceMount?.mode).toBe("ro");
     });
 
-    it("mounts auth files read-only", () => {
+    it("does not mount auth files (uses ANTHROPIC_API_KEY instead)", () => {
       const agent = createTestAgent();
       const dockerConfig = resolveDockerConfig({ enabled: true });
 
       const mounts = buildContainerMounts(agent, dockerConfig, tempDir);
 
-      // Auth should be mounted read-only
+      // Auth should NOT be mounted - we use ANTHROPIC_API_KEY env var instead
       const authMount = mounts.find((m) =>
-        m.containerPath?.includes(".claude")
+        m.containerPath?.includes(".claude") && m.hostPath?.includes(".claude")
       );
-      expect(authMount).toBeDefined();
-      expect(authMount?.mode).toBe("ro");
+      expect(authMount).toBeUndefined();
     });
 
-    it("includes docker-sessions directory mount", () => {
+    it("includes docker-sessions directory mount at Claude session path", () => {
       const agent = createTestAgent();
       const dockerConfig = resolveDockerConfig({ enabled: true });
 
       const mounts = buildContainerMounts(agent, dockerConfig, tempDir);
 
+      // Session mount at Claude CLI session location (encoded path: /workspace → -workspace)
       const sessionMount = mounts.find((m) =>
-        m.containerPath === "/home/claude/.herdctl/sessions"
+        m.containerPath === "/home/claude/.claude/projects/-workspace"
       );
       expect(sessionMount).toBeDefined();
       expect(sessionMount?.mode).toBe("rw");
