@@ -47,6 +47,12 @@ export const SessionInfoSchema = z.object({
 
   /** Current operational mode of the session */
   mode: SessionModeSchema,
+
+  /**
+   * Working directory (cwd) when the session was created
+   * Used to detect working directory changes that would make the session invalid
+   */
+  working_directory: z.string().optional(),
 });
 
 // =============================================================================
@@ -70,6 +76,8 @@ export interface CreateSessionOptions {
   session_id: string;
   /** Operational mode (defaults to 'autonomous') */
   mode?: SessionMode;
+  /** Working directory (cwd) for the session */
+  working_directory?: string;
 }
 
 /**
@@ -88,5 +96,6 @@ export function createSessionInfo(options: CreateSessionOptions): SessionInfo {
     last_used_at: now,
     job_count: 0,
     mode: options.mode ?? "autonomous",
+    working_directory: options.working_directory,
   };
 }

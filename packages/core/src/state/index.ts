@@ -84,3 +84,9 @@ export {
   validateSession,
   isSessionExpiredError,
 } from "./session-validation.js";
+
+// Re-export working directory validation functions
+export {
+  validateWorkingDirectory,
+  type WorkingDirectoryValidation,
+} from "./working-directory-validation.js";

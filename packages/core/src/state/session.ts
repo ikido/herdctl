@@ -225,6 +225,7 @@ export async function updateSessionInfo(
       agent_name: agentName,
       session_id: updates.session_id,
       mode: updates.mode,
+      working_directory: updates.working_directory,
     });
 
     updatedSession = {

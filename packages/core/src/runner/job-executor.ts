@@ -40,9 +40,11 @@ import {
   getSessionInfo,
   clearSession,
   isSessionExpiredError,
+  validateWorkingDirectory,
   type JobMetadata,
   type TriggerType,
 } from "../state/index.js";
+import { resolveWorkingDirectory } from "../fleet-manager/working-directory-helper.js";
 
 // =============================================================================
 // Types
@@ -209,29 +211,50 @@ export class JobExecutor {
       });
 
       if (existingSession?.session_id) {
-        // Use the actual session ID from the stored session, not the original options.resume value
-        // This ensures we always use the correct session ID stored on disk
-        effectiveResume = existingSession.session_id;
-        this.logger.info?.(
-          `Found valid session for ${agent.name}: ${effectiveResume}, will attempt to resume`
-        );
+        // Validate that the working directory hasn't changed since the session was created
+        // If it changed, Claude Code will look for the session file in the wrong directory
+        const currentWorkingDirectory = resolveWorkingDirectory(agent);
+        const wdValidation = validateWorkingDirectory(existingSession, currentWorkingDirectory);
 
-        // Update last_used_at NOW to prevent session from expiring during long-running jobs
-        // This fixes the authentication bug where sessions could expire mid-execution
-        try {
-          await updateSessionInfo(sessionsDir, agent.name, {
-            session_id: existingSession.session_id,
-            job_count: existingSession.job_count,
-            mode: existingSession.mode,
-          });
-          this.logger.info?.(
-            `Refreshed session timestamp for ${agent.name} before execution`
-          );
-        } catch (updateError) {
+        if (!wdValidation.valid) {
           this.logger.warn(
-            `Failed to refresh session timestamp: ${(updateError as Error).message}`
+            `${wdValidation.message} - clearing stale session ${existingSession.session_id}`
           );
-          // Continue anyway - the session is still valid for now
+          try {
+            await clearSession(sessionsDir, agent.name);
+          } catch (clearError) {
+            this.logger.warn(
+              `Failed to clear stale session: ${(clearError as Error).message}`
+            );
+          }
+          // Continue without resume - working directory changed
+          effectiveResume = undefined;
+        } else {
+          // Use the actual session ID from the stored session, not the original options.resume value
+          // This ensures we always use the correct session ID stored on disk
+          effectiveResume = existingSession.session_id;
+          this.logger.info?.(
+            `Found valid session for ${agent.name}: ${effectiveResume}, will attempt to resume`
+          );
+
+          // Update last_used_at NOW to prevent session from expiring during long-running jobs
+          // This fixes the authentication bug where sessions could expire mid-execution
+          try {
+            await updateSessionInfo(sessionsDir, agent.name, {
+              session_id: existingSession.session_id,
+              job_count: existingSession.job_count,
+              mode: existingSession.mode,
+              working_directory: currentWorkingDirectory,
+            });
+            this.logger.info?.(
+              `Refreshed session timestamp for ${agent.name} before execution`
+            );
+          } catch (updateError) {
+            this.logger.warn(
+              `Failed to refresh session timestamp: ${(updateError as Error).message}`
+            );
+            // Continue anyway - the session is still valid for now
+          }
         }
       } else {
         this.logger.info?.(
@@ -508,10 +531,14 @@ export class JobExecutor {
         // Get existing session to determine if updating or creating
         const existingSession = await getSessionInfo(sessionsDir, agent.name);
 
+        // Store the current working directory with the session
+        const currentWorkingDirectory = resolveWorkingDirectory(agent);
+
         await updateSessionInfo(sessionsDir, agent.name, {
           session_id: sessionId,
           job_count: (existingSession?.job_count ?? 0) + 1,
           mode: existingSession?.mode ?? "autonomous",
+          working_directory: currentWorkingDirectory,
         });
 
         this.logger.info?.(
