@@ -8,6 +8,7 @@
 
 import * as path from "node:path";
 import * as os from "node:os";
+import { readdir, stat } from "node:fs/promises";
 
 /**
  * Encode a workspace path for CLI session storage
@@ -77,4 +78,55 @@ export function getCliSessionFile(
 ): string {
   const sessionDir = getCliSessionDir(workspacePath);
   return path.join(sessionDir, `${sessionId}.jsonl`);
+}
+
+/**
+ * Find the newest session file in a CLI session directory
+ *
+ * Scans the session directory for .jsonl files and returns the path to the
+ * most recently modified one. This is useful when spawning a new CLI session
+ * without knowing the session ID upfront - the newest file is typically the
+ * one just created.
+ *
+ * @example
+ * ```typescript
+ * const sessionDir = getCliSessionDir('/Users/ed/Code/myproject');
+ * const newestFile = await findNewestSessionFile(sessionDir);
+ * // => '/Users/ed/.claude/projects/-Users-ed-Code-myproject/abc123.jsonl'
+ * ```
+ *
+ * @param sessionDir - Absolute path to CLI session directory
+ * @returns Promise resolving to path of newest .jsonl file
+ * @throws {Error} If directory doesn't exist or contains no .jsonl files
+ */
+export async function findNewestSessionFile(
+  sessionDir: string,
+): Promise<string> {
+  try {
+    const files = await readdir(sessionDir);
+    const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
+
+    if (jsonlFiles.length === 0) {
+      throw new Error(`No session files found in ${sessionDir}`);
+    }
+
+    // Get stats for all .jsonl files
+    const fileStats = await Promise.all(
+      jsonlFiles.map(async (file) => {
+        const filePath = path.join(sessionDir, file);
+        const stats = await stat(filePath);
+        return { path: filePath, mtime: stats.mtime };
+      }),
+    );
+
+    // Sort by modification time (newest first)
+    fileStats.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
+    return fileStats[0].path;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`Session directory does not exist: ${sessionDir}`);
+    }
+    throw error;
+  }
 }

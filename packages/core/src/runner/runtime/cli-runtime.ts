@@ -2,8 +2,8 @@
  * CLI Runtime implementation
  *
  * Executes Claude agents via the Claude CLI instead of the SDK, enabling Max plan
- * pricing for agent execution. This runtime spawns the `claude` CLI command with
- * stream-json output format and parses stdout into SDKMessage format.
+ * pricing for agent execution. This runtime spawns the `claude` CLI command and
+ * watches the session file for messages (since claude only outputs to TTY).
  *
  * Requirements:
  * - Claude CLI must be installed (`brew install claude-ai/tap/claude`)
@@ -14,18 +14,21 @@
  * seamless runtime switching via agent configuration.
  */
 
-import { execa } from "execa";
-import { createInterface } from "node:readline";
+import { execa, type Subprocess } from "execa";
 import type { RuntimeInterface, RuntimeExecuteOptions } from "./interface.js";
 import type { SDKMessage } from "../types.js";
-import { parseCLILine } from "./cli-output-parser.js";
+import {
+  getCliSessionDir,
+  findNewestSessionFile,
+} from "./cli-session-path.js";
+import { CLISessionWatcher } from "./cli-session-watcher.js";
 
 /**
  * CLI runtime implementation
  *
  * This runtime uses the Claude CLI to execute agents, providing an alternative
- * backend to the SDK runtime. It spawns `claude` with stream-json output and
- * parses the JSONL stdout stream into SDKMessage format.
+ * backend to the SDK runtime. It spawns `claude` CLI and watches the session file
+ * for new messages (since claude only outputs stream-json to TTY).
  *
  * The CLI runtime enables:
  * - Max plan pricing (cost savings vs SDK/API pricing)
@@ -49,15 +52,18 @@ export class CLIRuntime implements RuntimeInterface {
   /**
    * Execute an agent using the Claude CLI
    *
-   * Spawns `claude` CLI with stream-json output format and streams parsed
-   * messages. Handles process lifecycle, cancellation, and error scenarios.
+   * Spawns `claude` CLI and watches the session file for messages. The session
+   * file approach is used because claude only outputs stream-json to TTY, not
+   * to pipes.
    *
    * Process flow:
    * 1. Build CLI arguments from execution options
-   * 2. Spawn claude subprocess with execa
-   * 3. Stream and parse stdout lines into SDKMessage
-   * 4. Track session_id from first message for resume support
-   * 5. Handle process completion and exit codes
+   * 2. Spawn claude subprocess (output is ignored)
+   * 3. Find the CLI session directory for the workspace
+   * 4. Wait briefly for session file to be created
+   * 5. Find the newest .jsonl file (the one just created)
+   * 6. Watch that file and stream messages as they're appended
+   * 7. Handle process completion and exit codes
    *
    * @param options - Execution options including prompt, agent, and session info
    * @returns AsyncIterable of SDK messages
@@ -67,10 +73,6 @@ export class CLIRuntime implements RuntimeInterface {
     // Note: -p is a boolean flag for print mode, prompt goes at the end as positional arg
     const args: string[] = [
       "-p",
-      "--output-format",
-      "stream-json",
-      "--include-partial-messages",
-      "--verbose",
       "--dangerously-skip-permissions",
     ];
 
@@ -85,8 +87,9 @@ export class CLIRuntime implements RuntimeInterface {
     // Add prompt as positional argument at the end
     args.push(options.prompt);
 
-    // Track session ID for debugging
-    let sessionId: string | undefined;
+    // Track process and watcher for cleanup
+    let subprocess: Subprocess | undefined;
+    let watcher: CLISessionWatcher | undefined;
     let hasError = false;
 
     try {
@@ -96,44 +99,46 @@ export class CLIRuntime implements RuntimeInterface {
         ? typeof working_directory === "string"
           ? working_directory
           : working_directory.root
-        : undefined;
+        : process.cwd();
 
-      // Spawn claude subprocess
-      const subprocess = execa("claude", args, {
+      // Get the CLI session directory where files will be written
+      const sessionDir = getCliSessionDir(cwd);
+
+      // Spawn claude subprocess (we won't read its output)
+      subprocess = execa("claude", args, {
         cwd,
         cancelSignal: options.abortController?.signal,
       });
 
-      // Ensure stdout exists (should always be true with execa)
-      if (!subprocess.stdout) {
-        yield {
-          type: "error",
-          message: "Failed to capture CLI stdout",
-        };
-        return;
+      // Wait for session file to be created (claude creates it almost immediately)
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Find the newest session file (the one just created)
+      const sessionFilePath = await findNewestSessionFile(sessionDir);
+
+      // Watch the session file for messages
+      watcher = new CLISessionWatcher(sessionFilePath);
+
+      // Set up abort handling
+      if (options.abortController) {
+        options.abortController.signal.addEventListener("abort", () => {
+          subprocess?.kill();
+          watcher?.stop();
+        });
       }
 
-      // Create readline interface for line-by-line processing
-      const rl = createInterface({
-        input: subprocess.stdout,
-        crlfDelay: Infinity,
-      });
+      // Stream messages from the session file
+      for await (const message of watcher.watch()) {
+        yield message;
 
-      // Stream and parse stdout lines
-      for await (const line of rl) {
-        const message = parseCLILine(line);
-        if (message) {
-          // Track session ID from first message that includes it
-          if (message.session_id && !sessionId) {
-            sessionId = message.session_id;
-          }
+        // Track errors
+        if (message.type === "error") {
+          hasError = true;
+        }
 
-          // Track if we've seen an error message
-          if (message.type === "error") {
-            hasError = true;
-          }
-
-          yield message;
+        // If this is a result message, we're done
+        if (message.type === "result") {
+          break;
         }
       }
 
@@ -182,6 +187,9 @@ export class CLIRuntime implements RuntimeInterface {
         type: "error",
         message: `CLI execution failed: ${errorMessage}`,
       };
+    } finally {
+      // Cleanup
+      watcher?.stop();
     }
   }
 }
