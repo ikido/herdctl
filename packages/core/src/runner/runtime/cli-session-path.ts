@@ -130,3 +130,70 @@ export async function findNewestSessionFile(
     throw error;
   }
 }
+
+/**
+ * Wait for a new session file to be created after a given timestamp
+ *
+ * Polls the session directory until a new .jsonl file appears that was
+ * created after the specified start time. This prevents picking up old
+ * session files when spawning a new CLI session.
+ *
+ * @example
+ * ```typescript
+ * const startTime = Date.now();
+ * // ... spawn claude CLI ...
+ * const sessionFile = await waitForNewSessionFile(sessionDir, startTime);
+ * // => '/Users/ed/.claude/projects/-Users-ed-Code-myproject/new-session.jsonl'
+ * ```
+ *
+ * @param sessionDir - Absolute path to CLI session directory
+ * @param startTime - Timestamp (ms) before which files should be ignored
+ * @param options - Optional configuration
+ * @returns Promise resolving to path of newly created session file
+ * @throws {Error} If timeout exceeded or directory doesn't exist
+ */
+export async function waitForNewSessionFile(
+  sessionDir: string,
+  startTime: number,
+  options: { timeoutMs?: number; pollIntervalMs?: number } = {},
+): Promise<string> {
+  const { timeoutMs = 5000, pollIntervalMs = 100 } = options;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const files = await readdir(sessionDir);
+      const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
+
+      // Find files created after startTime
+      const newFiles: Array<{ path: string; mtime: Date }> = [];
+      for (const file of jsonlFiles) {
+        const filePath = path.join(sessionDir, file);
+        const stats = await stat(filePath);
+
+        // Check if file was modified after startTime
+        if (stats.mtime.getTime() > startTime) {
+          newFiles.push({ path: filePath, mtime: stats.mtime });
+        }
+      }
+
+      // Return the newest file created after startTime
+      if (newFiles.length > 0) {
+        newFiles.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+        return newFiles[0].path;
+      }
+    } catch (error) {
+      // Directory might not exist yet - keep polling
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+
+    // Wait before next poll
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  throw new Error(
+    `Timeout waiting for new session file in ${sessionDir} (waited ${timeoutMs}ms)`,
+  );
+}

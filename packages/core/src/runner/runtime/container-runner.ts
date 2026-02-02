@@ -28,7 +28,6 @@ import {
   buildContainerMounts,
   buildContainerEnv,
 } from "./container-manager.js";
-import { parseCLILine } from "./cli-output-parser.js";
 import Dockerode from "dockerode";
 
 /**
@@ -111,9 +110,17 @@ export class ContainerRunner implements RuntimeInterface {
 
       // Stream messages
       for await (const line of rl) {
-        const message = parseCLILine(line);
-        if (message) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        try {
+          const message = JSON.parse(trimmed) as SDKMessage;
           yield message;
+        } catch (error) {
+          // Skip invalid JSON lines (CLI may output non-JSON)
+          console.warn(
+            `[ContainerRunner] Failed to parse line: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
       }
 

@@ -1,132 +1,96 @@
 /**
  * CLI session file watcher - monitors CLI session files for new messages
  *
- * This module provides file-based message streaming as an alternative to stdout
- * streaming. It's useful for:
- * - Session replay: Read historical session data from disk
- * - Robustness: Session files persist even if process crashes
- * - Debugging: Inspect raw CLI session output
- *
- * Uses chokidar with awaitWriteFinish to handle atomic writes and prevent
- * partial JSON reads during rapid file updates.
+ * Event-driven watcher that yields messages as they're written to the session file.
+ * No polling, no timeouts - just clean async/await.
  */
 
 import chokidar from "chokidar";
 import { readFile } from "node:fs/promises";
 import type { SDKMessage } from "../types.js";
-import { parseCLILine } from "./cli-output-parser.js";
 
 /**
  * Watches a CLI session file and yields new messages as they're written
- *
- * Tracks the number of processed lines to avoid re-processing on each file change.
- * Uses chokidar's awaitWriteFinish to debounce rapid writes and ensure complete
- * JSON lines are read.
- *
- * @example
- * ```typescript
- * const watcher = new CLISessionWatcher('/path/to/session.jsonl');
- *
- * for await (const message of watcher.watch()) {
- *   console.log('New message:', message);
- * }
- *
- * // Later: stop watching
- * watcher.stop();
- * ```
  */
 export class CLISessionWatcher {
   private watcher: ReturnType<typeof chokidar.watch> | null = null;
   private lastLineCount = 0;
   private sessionFilePath: string;
+  private messageQueue: SDKMessage[] = [];
+  private pendingMessageResolve: (() => void) | null = null;
+  private stopped = false;
 
-  /**
-   * Create a new session file watcher
-   *
-   * @param sessionFilePath - Absolute path to CLI session JSONL file
-   */
   constructor(sessionFilePath: string) {
     this.sessionFilePath = sessionFilePath;
   }
 
   /**
-   * Start watching the session file and yield new messages
-   *
-   * This is an async generator that yields SDKMessage objects as new lines
-   * are written to the session file. It tracks the last processed line count
-   * to avoid re-processing existing content.
-   *
-   * The watcher uses chokidar's awaitWriteFinish with:
-   * - stabilityThreshold: 500ms - wait for 500ms of no writes before reading
-   * - pollInterval: 100ms - check for stability every 100ms
-   *
-   * This prevents reading partial JSON lines during rapid CLI writes.
-   *
-   * @yields SDKMessage - Each new message written to the session file
+   * Process file and queue any new messages
    */
-  async *watch(): AsyncIterable<SDKMessage> {
-    // Configure chokidar with debouncing to prevent partial reads
-    this.watcher = chokidar.watch(this.sessionFilePath, {
-      awaitWriteFinish: {
-        stabilityThreshold: 500, // Wait 500ms after last write
-        pollInterval: 100, // Check every 100ms if stable
-      },
-      // Don't emit events for initial add (we'll handle existing content separately)
-      ignoreInitial: false,
-    });
+  private async processFile(): Promise<void> {
+    try {
+      const content = await readFile(this.sessionFilePath, "utf-8");
+      const lines = content.split("\n").filter((line) => line.trim() !== "");
 
-    // Process existing content on first 'add' event (file exists)
-    let initialProcessed = false;
+      // Process only new lines since last read
+      const newLines = lines.slice(this.lastLineCount);
+      this.lastLineCount = lines.length;
 
-    // Create promise-based event handling for async iteration
-    const messageQueue: SDKMessage[] = [];
-    let resolveNext: ((value: IteratorResult<SDKMessage>) => void) | null =
-      null;
-    let finished = false;
+      console.log(`[CLISessionWatcher] Processing ${newLines.length} new lines`);
 
-    const processFile = async (): Promise<void> => {
-      try {
-        const content = await readFile(this.sessionFilePath, "utf-8");
-        const lines = content.split("\n");
-
-        // Process only new lines since last read
-        const newLines = lines.slice(this.lastLineCount);
-        this.lastLineCount = lines.length;
-
-        // Parse and queue valid messages
-        for (const line of newLines) {
-          const message = parseCLILine(line);
-          if (message) {
-            if (resolveNext) {
-              // Iterator is waiting for next value
-              resolveNext({ value: message, done: false });
-              resolveNext = null;
-            } else {
-              // Queue for later retrieval
-              messageQueue.push(message);
-            }
-          }
-        }
-      } catch (error) {
-        // File might not exist yet or be unreadable
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      // Parse and queue valid messages
+      for (const line of newLines) {
+        try {
+          const message = JSON.parse(line) as SDKMessage;
+          console.log(`[CLISessionWatcher] Queued message type: ${message.type}`);
+          this.messageQueue.push(message);
+        } catch (error) {
+          // Skip invalid JSON lines (CLI may output non-JSON)
           console.warn(
-            `[CLISessionWatcher] Error reading session file: ${error instanceof Error ? error.message : String(error)}`,
+            `[CLISessionWatcher] Failed to parse line: ${error instanceof Error ? error.message : String(error)}`
           );
         }
       }
-    };
 
-    // Handle both 'add' (initial) and 'change' events
-    this.watcher.on("add", async () => {
-      if (!initialProcessed) {
-        initialProcessed = true;
-        await processFile();
+      // If someone is waiting for a message and we have one, wake them up
+      if (this.pendingMessageResolve && this.messageQueue.length > 0) {
+        console.log(`[CLISessionWatcher] Waking up waiting iterator`);
+        this.pendingMessageResolve();
+        this.pendingMessageResolve = null;
       }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.warn(
+          `[CLISessionWatcher] Error reading session file: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Watch session file and yield messages as they arrive
+   *
+   * This is event-driven - it waits (blocks) until messages are available.
+   * No polling, no timeouts.
+   */
+  async *watch(): AsyncIterable<SDKMessage> {
+    // Configure chokidar
+    this.watcher = chokidar.watch(this.sessionFilePath, {
+      awaitWriteFinish: {
+        stabilityThreshold: 500,
+        pollInterval: 100,
+      },
+      ignoreInitial: false,
+    });
+
+    this.watcher.on("add", async () => {
+      console.log("[CLISessionWatcher] File 'add' event");
+      await this.processFile();
     });
 
     this.watcher.on("change", async () => {
-      await processFile();
+      console.log("[CLISessionWatcher] File 'change' event");
+      await this.processFile();
     });
 
     this.watcher.on("error", (error: unknown) => {
@@ -135,75 +99,78 @@ export class CLISessionWatcher {
       );
     });
 
-    // Async iterator implementation
     try {
-      while (!finished) {
+      while (!this.stopped) {
         // If we have queued messages, yield them
-        if (messageQueue.length > 0) {
-          const message = messageQueue.shift()!;
+        while (this.messageQueue.length > 0) {
+          const message = this.messageQueue.shift()!;
+          console.log(`[CLISessionWatcher] Yielding message type: ${message.type}`);
           yield message;
-        } else {
-          // Wait for next message
-          await new Promise<void>((resolve) => {
-            resolveNext = (result) => {
-              if (!result.done) {
-                // We'll yield this message in the next iteration
-                messageQueue.push(result.value);
-              }
-              resolve();
-            };
+        }
 
-            // Set a timeout to check periodically if we should continue
-            setTimeout(() => {
-              resolveNext = null;
-              resolve();
-            }, 100);
-          });
+        // No messages - wait for chokidar to add one
+        console.log(`[CLISessionWatcher] No messages, waiting for chokidar event`);
+        await new Promise<void>((resolve) => {
+          this.pendingMessageResolve = resolve;
+
+          // Also wake up if stopped
+          if (this.stopped) {
+            resolve();
+          }
+        });
+        console.log(`[CLISessionWatcher] Woke up (stopped: ${this.stopped}, queue: ${this.messageQueue.length})`);
+
+        // Check if we should exit
+        if (this.stopped) {
+          break;
         }
       }
     } finally {
+      console.log(`[CLISessionWatcher] Generator exiting`);
       this.stop();
     }
   }
 
   /**
-   * Stop watching the session file
+   * Process any remaining messages in the file
    *
-   * Closes the file watcher and releases resources. Should be called when
-   * done watching to prevent resource leaks.
+   * Called when the CLI process exits to ensure we don't miss final messages
+   * that haven't triggered a chokidar event yet.
+   *
+   * @returns Array of any remaining messages found
+   */
+  async flushRemainingMessages(): Promise<SDKMessage[]> {
+    console.log(`[CLISessionWatcher] Flushing remaining messages from file`);
+    await this.processFile();
+
+    // Return all queued messages
+    const messages = [...this.messageQueue];
+    this.messageQueue = [];
+
+    console.log(`[CLISessionWatcher] Flushed ${messages.length} remaining message(s)`);
+    return messages;
+  }
+
+  /**
+   * Stop watching
    */
   stop(): void {
+    console.log(`[CLISessionWatcher] stop() called`);
+    this.stopped = true;
     if (this.watcher) {
       this.watcher.close();
       this.watcher = null;
+    }
+    // Wake up any waiting iterator
+    if (this.pendingMessageResolve) {
+      this.pendingMessageResolve();
+      this.pendingMessageResolve = null;
     }
   }
 }
 
 /**
- * Watch a CLI session file for new messages
- *
- * Convenience function that creates a CLISessionWatcher and yields messages.
- * Automatically stops watching when the iteration is aborted via signal.
- *
- * @example
- * ```typescript
- * const abortController = new AbortController();
- *
- * for await (const message of watchSessionFile(
- *   '/path/to/session.jsonl',
- *   abortController.signal
- * )) {
- *   console.log('Message:', message);
- * }
- *
- * // Later: stop watching
- * abortController.abort();
- * ```
- *
- * @param sessionFilePath - Absolute path to CLI session JSONL file
- * @param signal - Optional AbortSignal to stop watching
- * @yields SDKMessage - Each new message written to the session file
+ * Convenience function to watch a session file
  */
 export async function* watchSessionFile(
   sessionFilePath: string,
