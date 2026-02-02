@@ -245,7 +245,7 @@ describe("Path Translation", () => {
   it("workspace can be specified as string", () => {
     const agent = createTestAgent({
       runtime: "sdk",
-      workspace: "/path/to/workspace",
+      working_directory: "/path/to/workspace",
     });
 
     const runtime = RuntimeFactory.create(agent);
@@ -255,7 +255,7 @@ describe("Path Translation", () => {
   it("workspace can be specified as object with root", () => {
     const agent = createTestAgent({
       runtime: "sdk",
-      workspace: {
+      working_directory: {
         root: "/path/to/workspace",
         auto_clone: true,
         clone_depth: 1,

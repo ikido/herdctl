@@ -269,7 +269,7 @@ export const DefaultsSchema = z.object({
   permissions: PermissionsSchema.optional(),
   work_source: WorkSourceSchema.optional(),
   instances: InstancesSchema.optional(),
-  workspace: z.lazy(() => AgentWorkspaceSchema).optional(),
+  working_directory: z.lazy(() => AgentWorkingDirectorySchema).optional(),
   // Extended defaults for agent-level configuration
   session: SessionSchema.optional(),
   model: z.string().optional(),
@@ -278,10 +278,10 @@ export const DefaultsSchema = z.object({
 });
 
 // =============================================================================
-// Workspace Schema
+// Working Directory Schema
 // =============================================================================
 
-export const WorkspaceSchema = z.object({
+export const WorkingDirectorySchema = z.object({
   root: z.string(),
   auto_clone: z.boolean().optional().default(true),
   clone_depth: z.number().int().positive().optional().default(1),
@@ -554,10 +554,13 @@ export const AgentHooksSchema = z.object({
 });
 
 // =============================================================================
-// Agent Workspace Schema (can be string path or full workspace object)
+// Agent Working Directory Schema (can be string path or full working directory object)
 // =============================================================================
 
-export const AgentWorkspaceSchema = z.union([z.string(), WorkspaceSchema]);
+export const AgentWorkingDirectorySchema = z.union([
+  z.string(),
+  WorkingDirectorySchema,
+]);
 
 // =============================================================================
 // Agent Configuration Schema
@@ -567,7 +570,7 @@ export const AgentConfigSchema = z
   .object({
     name: z.string(),
     description: z.string().optional(),
-    workspace: AgentWorkspaceSchema.optional(),
+    working_directory: AgentWorkingDirectorySchema.optional(),
     repo: z.string().optional(),
     identity: IdentitySchema.optional(),
     system_prompt: z.string().optional(),
@@ -657,7 +660,7 @@ export const FleetConfigSchema = z
       .strict()
       .optional(),
     defaults: DefaultsSchema.optional(),
-    workspace: WorkspaceSchema.optional(),
+    working_directory: WorkingDirectorySchema.optional(),
     agents: z.array(AgentReferenceSchema).optional().default([]),
     chat: ChatSchema.optional(),
     webhooks: WebhooksSchema.optional(),
@@ -682,7 +685,7 @@ export type Instances = z.infer<typeof InstancesSchema>;
 export type DockerInput = z.input<typeof DockerSchema>;
 export type Docker = z.infer<typeof DockerSchema>;
 export type Defaults = z.infer<typeof DefaultsSchema>;
-export type Workspace = z.infer<typeof WorkspaceSchema>;
+export type WorkingDirectory = z.infer<typeof WorkingDirectorySchema>;
 export type AgentOverrides = z.infer<typeof AgentOverridesSchema>;
 export type AgentReference = z.infer<typeof AgentReferenceSchema>;
 export type DiscordChat = z.infer<typeof DiscordChatSchema>;
@@ -701,7 +704,9 @@ export type DiscordChannel = z.infer<typeof DiscordChannelSchema>;
 export type DiscordGuild = z.infer<typeof DiscordGuildSchema>;
 export type AgentChatDiscord = z.infer<typeof AgentChatDiscordSchema>;
 export type AgentChat = z.infer<typeof AgentChatSchema>;
-export type AgentWorkspace = z.infer<typeof AgentWorkspaceSchema>;
+export type AgentWorkingDirectory = z.infer<
+  typeof AgentWorkingDirectorySchema
+>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 // Hook types - Output types (after parsing with defaults applied)
 export type HookEvent = z.infer<typeof HookEventSchema>;

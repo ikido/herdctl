@@ -196,7 +196,7 @@ describe("toSDKOptions", () => {
     });
 
     it("sets settingSources to project for project-embedded agents (with workspace)", () => {
-      const agent = createTestAgent({ workspace: "/path/to/existing/project" });
+      const agent = createTestAgent({ working_directory: "/path/to/existing/project" });
       const result = toSDKOptions(agent);
       // Project-embedded agents should load project settings (CLAUDE.md, skills, etc.)
       expect(result.settingSources).toEqual(["project"]);
@@ -212,7 +212,7 @@ describe("toSDKOptions", () => {
 
     it("explicit setting_sources overrides workspace default", () => {
       const agent = createTestAgent({
-        workspace: "/path/to/project",
+        working_directory: "/path/to/project",
         setting_sources: [], // Explicitly disable settings discovery
       });
       const result = toSDKOptions(agent);

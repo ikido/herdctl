@@ -49,7 +49,7 @@ function createTestAgent(overrides: Partial<ResolvedAgent> = {}): ResolvedAgent 
   return {
     name: "test-agent",
     configPath: "/path/to/agent.yaml",
-    workspace: "/workspace/project",
+    working_directory: "/workspace/project",
     ...overrides,
   } as ResolvedAgent;
 }
@@ -165,7 +165,7 @@ describeDocker("Docker Security Hardening", () => {
 
     it("handles agent workspace as string", () => {
       const agent = createTestAgent({
-        workspace: "/path/to/workspace",
+        working_directory: "/path/to/workspace",
       });
       const dockerConfig = resolveDockerConfig({ enabled: true });
 
@@ -180,7 +180,7 @@ describeDocker("Docker Security Hardening", () => {
 
     it("handles agent workspace as object with root", () => {
       const agent = createTestAgent({
-        workspace: {
+        working_directory: {
           root: "/path/to/workspace",
           auto_clone: true,
           clone_depth: 1,

@@ -176,14 +176,14 @@ export function toSDKOptions(
   result.systemPrompt = buildSystemPrompt(agent);
 
   // Setting sources for proper settings discovery
-  // Can be explicitly configured via setting_sources, or defaults based on workspace:
-  // - With workspace: ["project"] - inherit CLAUDE.md, skills, commands from workspace
-  // - Without workspace: [] - don't load settings from wherever herdctl is running
-  const workspace = agent.workspace;
+  // Can be explicitly configured via setting_sources, or defaults based on working_directory:
+  // - With working_directory: ["project"] - inherit CLAUDE.md, skills, commands from working directory
+  // - Without working_directory: [] - don't load settings from wherever herdctl is running
+  const working_directory = agent.working_directory;
   if (agent.setting_sources !== undefined) {
     // Explicit configuration takes precedence
     result.settingSources = [...agent.setting_sources];
-  } else if (workspace) {
+  } else if (working_directory) {
     // Default for project-embedded agents
     result.settingSources = ["project"];
   } else {
@@ -209,11 +209,14 @@ export function toSDKOptions(
     result.forkSession = true;
   }
 
-  // Working directory (from workspace config)
-  // Note: workspace variable already declared above for settingSources
-  if (workspace) {
-    // workspace can be a string path or an object with root property
-    result.cwd = typeof workspace === "string" ? workspace : workspace.root;
+  // Working directory (from working_directory config)
+  // Note: working_directory variable already declared above for settingSources
+  if (working_directory) {
+    // working_directory can be a string path or an object with root property
+    result.cwd =
+      typeof working_directory === "string"
+        ? working_directory
+        : working_directory.root;
   }
 
   return result;

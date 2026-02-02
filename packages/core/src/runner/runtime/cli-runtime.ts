@@ -86,12 +86,12 @@ export class CLIRuntime implements RuntimeInterface {
     let hasError = false;
 
     try {
-      // Determine workspace root for cwd
-      const workspace = options.agent.workspace;
-      const cwd = workspace
-        ? typeof workspace === "string"
-          ? workspace
-          : workspace.root
+      // Determine working directory root for cwd
+      const working_directory = options.agent.working_directory;
+      const cwd = working_directory
+        ? typeof working_directory === "string"
+          ? working_directory
+          : working_directory.root
         : undefined;
 
       // Spawn claude subprocess

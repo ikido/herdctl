@@ -299,9 +299,9 @@ export interface AgentInfo {
   model?: string;
 
   /**
-   * Workspace path for this agent
+   * Working directory path for this agent
    */
-  workspace?: string;
+  working_directory?: string;
 
   /**
    * Discord connector status (if Discord is configured for this agent)

@@ -208,7 +208,7 @@ export class ContainerManager {
 /**
  * Build volume mounts for container execution
  *
- * Creates mounts for workspace, auth files, and Docker sessions.
+ * Creates mounts for working directory, auth files, and Docker sessions.
  *
  * @param agent - Resolved agent configuration
  * @param dockerConfig - Docker configuration
@@ -222,13 +222,15 @@ export function buildContainerMounts(
 ): PathMapping[] {
   const mounts: PathMapping[] = [];
 
-  // Workspace mount
-  const workspace = agent.workspace;
-  if (workspace) {
-    const workspaceRoot =
-      typeof workspace === "string" ? workspace : workspace.root;
+  // Working directory mount
+  const working_directory = agent.working_directory;
+  if (working_directory) {
+    const working_directoryRoot =
+      typeof working_directory === "string"
+        ? working_directory
+        : working_directory.root;
     mounts.push({
-      hostPath: workspaceRoot,
+      hostPath: working_directoryRoot,
       containerPath: "/workspace",
       mode: dockerConfig.workspaceMode,
     });

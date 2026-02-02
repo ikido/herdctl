@@ -545,14 +545,14 @@ describe("mergeAgentConfig", () => {
       expect(result.description).toBe("A test agent");
     });
 
-    it("preserves agent workspace", () => {
+    it("preserves agent working directory", () => {
       const defaults: ExtendedDefaults = { model: "default-model" };
       const agent: AgentConfig = {
         name: "my-agent",
-        workspace: "/path/to/workspace",
+        working_directory: "/path/to/workspace",
       };
       const result = mergeAgentConfig(defaults, agent);
-      expect(result.workspace).toBe("/path/to/workspace");
+      expect(result.working_directory).toBe("/path/to/workspace");
     });
 
     it("preserves agent identity", () => {

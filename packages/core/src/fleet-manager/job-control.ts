@@ -685,19 +685,19 @@ export class JobControl {
   }
 
   /**
-   * Resolve the agent's workspace path
+   * Resolve the agent's working directory path
    */
   private resolveAgentWorkspace(agent: ResolvedAgent): string | undefined {
-    if (!agent.workspace) {
+    if (!agent.working_directory) {
       return undefined;
     }
 
-    // If workspace is a string, it's the path directly
-    if (typeof agent.workspace === "string") {
-      return agent.workspace;
+    // If working directory is a string, it's the path directly
+    if (typeof agent.working_directory === "string") {
+      return agent.working_directory;
     }
 
-    // If workspace is an object with root property
-    return agent.workspace.root;
+    // If working directory is an object with root property
+    return agent.working_directory.root;
   }
 }
