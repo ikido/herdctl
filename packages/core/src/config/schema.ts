@@ -269,6 +269,7 @@ export const DefaultsSchema = z.object({
   permissions: PermissionsSchema.optional(),
   work_source: WorkSourceSchema.optional(),
   instances: InstancesSchema.optional(),
+  workspace: z.lazy(() => AgentWorkspaceSchema).optional(),
   // Extended defaults for agent-level configuration
   session: SessionSchema.optional(),
   model: z.string().optional(),

@@ -597,7 +597,8 @@ describe("Fleet Status Query Methods", () => {
 
       await manager.initialize();
       const agent = await manager.getAgentInfoByName("no-ws-agent");
-      expect(agent.workspace).toBeUndefined();
+      // With no explicit workspace, defaults to agent config directory
+      expect(agent.workspace).toBe(join(configDir, "agents"));
     });
   });
 });

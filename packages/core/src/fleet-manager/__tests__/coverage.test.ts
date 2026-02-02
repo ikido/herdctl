@@ -1844,7 +1844,8 @@ describe("FleetManager Coverage Tests", () => {
       await manager.initialize();
 
       const agents = await manager.getAgentInfo();
-      expect(agents[0].workspace).toBeUndefined();
+      // With no explicit workspace, defaults to agent config directory
+      expect(agents[0].workspace).toBe(join(configDir, "agents"));
     });
   });
 

@@ -15,6 +15,7 @@ import type {
   Docker,
   PermissionMode,
   BashPermissions,
+  AgentWorkspace,
 } from "./schema.js";
 
 // =============================================================================
@@ -133,6 +134,7 @@ export interface ExtendedDefaults {
   work_source?: WorkSource;
   instances?: { max_concurrent?: number };
   session?: Session;
+  workspace?: AgentWorkspace;
   model?: string;
   max_turns?: number;
   permission_mode?: PermissionMode;
@@ -150,6 +152,8 @@ export interface ExtendedDefaults {
  * - work_source: Deep merged
  * - session: Deep merged
  * - docker: Deep merged
+ * - instances: Deep merged
+ * - workspace: Agent value takes precedence, or uses fleet default if agent has none
  * - model: Agent value overrides default
  * - max_turns: Agent value overrides default
  * - permission_mode: Agent value overrides default
@@ -210,6 +214,24 @@ export function mergeAgentConfig(
       defaults.instances as Record<string, unknown> | undefined,
       agent.instances as Record<string, unknown> | undefined
     ) as AgentConfig["instances"];
+  }
+
+  // Merge workspace
+  // If agent has no workspace, use fleet default
+  // If both are objects, deep merge them
+  // If either is a string, agent takes precedence
+  if (agent.workspace === undefined && defaults.workspace !== undefined) {
+    result.workspace = defaults.workspace;
+  } else if (
+    agent.workspace &&
+    defaults.workspace &&
+    typeof agent.workspace === "object" &&
+    typeof defaults.workspace === "object"
+  ) {
+    result.workspace = deepMerge(
+      defaults.workspace as Record<string, unknown>,
+      agent.workspace as Record<string, unknown>
+    ) as AgentConfig["workspace"];
   }
 
   // Merge scalar values (agent takes precedence if defined)

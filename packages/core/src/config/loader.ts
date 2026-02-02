@@ -422,6 +422,21 @@ export async function loadConfig(
     fleetConfig = interpolateConfig(fleetConfig, { env });
   }
 
+  // Normalize workspace in fleet defaults (resolve relative paths relative to fleet config directory)
+  // This ensures fleet-level default workspace paths are resolved consistently before merging into agents
+  if (fleetConfig.defaults?.workspace) {
+    const workspace = fleetConfig.defaults.workspace;
+    if (typeof workspace === "string") {
+      // Resolve relative string workspace path
+      if (!workspace.startsWith("/")) {
+        fleetConfig.defaults.workspace = resolve(configDir, workspace);
+      }
+    } else if (workspace.root && !workspace.root.startsWith("/")) {
+      // Resolve relative root in workspace object
+      workspace.root = resolve(configDir, workspace.root);
+    }
+  }
+
   // Load all agent configs
   const agents: ResolvedAgent[] = [];
 
@@ -472,6 +487,26 @@ export async function loadConfig(
         agentConfig as Record<string, unknown>,
         agentRef.overrides as Record<string, unknown>
       ) as AgentConfig;
+    }
+
+    // Normalize workspace: default to agent config directory, resolve relative paths
+    const agentConfigDir = dirname(agentPath);
+    if (!agentConfig.workspace) {
+      // Default: workspace is the directory containing the agent config file
+      agentConfig.workspace = agentConfigDir;
+    } else if (typeof agentConfig.workspace === "string") {
+      // If workspace is a relative path, resolve it relative to agent config directory
+      if (!agentConfig.workspace.startsWith("/")) {
+        agentConfig.workspace = resolve(agentConfigDir, agentConfig.workspace);
+      }
+    } else if (agentConfig.workspace.root) {
+      // If workspace is an object with relative root, resolve root relative to agent config directory
+      if (!agentConfig.workspace.root.startsWith("/")) {
+        agentConfig.workspace.root = resolve(
+          agentConfigDir,
+          agentConfig.workspace.root
+        );
+      }
     }
 
     agents.push({

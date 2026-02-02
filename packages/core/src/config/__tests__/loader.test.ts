@@ -781,4 +781,132 @@ name: nested-agent
     expect(result.configPath).toBe(join(tempDir, "projects", "myproject", "herdctl.yaml"));
     expect(result.agents[0].name).toBe("nested-agent");
   });
+
+  describe("workspace normalization", () => {
+    it("defaults workspace to agent config directory when not specified", async () => {
+      await createFile(join(tempDir, "herdctl.yaml"), `
+version: 1
+agents:
+  - path: ./agents/worker.yaml
+`);
+      await createFile(join(tempDir, "agents", "worker.yaml"), `
+name: worker
+`);
+
+      const result = await loadConfig(tempDir);
+
+      expect(result.agents[0].workspace).toBe(join(tempDir, "agents"));
+    });
+
+    it("resolves relative workspace path relative to agent config directory", async () => {
+      await createFile(join(tempDir, "herdctl.yaml"), `
+version: 1
+agents:
+  - path: ./agents/nested/worker.yaml
+`);
+      await createFile(join(tempDir, "agents", "nested", "worker.yaml"), `
+name: worker
+workspace: ../..
+`);
+
+      const result = await loadConfig(tempDir);
+
+      // Agent at /temp/agents/nested, workspace ../.. resolves to /temp
+      expect(result.agents[0].workspace).toBe(tempDir);
+    });
+
+    it("keeps absolute workspace path as-is", async () => {
+      await createFile(join(tempDir, "herdctl.yaml"), `
+version: 1
+agents:
+  - path: ./agents/worker.yaml
+`);
+      await createFile(join(tempDir, "agents", "worker.yaml"), `
+name: worker
+workspace: /absolute/path/to/workspace
+`);
+
+      const result = await loadConfig(tempDir);
+
+      expect(result.agents[0].workspace).toBe("/absolute/path/to/workspace");
+    });
+
+    it("resolves relative workspace root in object form", async () => {
+      await createFile(join(tempDir, "herdctl.yaml"), `
+version: 1
+agents:
+  - path: ./agents/worker.yaml
+`);
+      await createFile(join(tempDir, "agents", "worker.yaml"), `
+name: worker
+workspace:
+  root: ..
+  auto_clone: true
+`);
+
+      const result = await loadConfig(tempDir);
+
+      expect(typeof result.agents[0].workspace).toBe("object");
+      const workspace = result.agents[0].workspace as { root: string };
+      expect(workspace.root).toBe(tempDir);
+    });
+
+    it("keeps absolute workspace root in object form as-is", async () => {
+      await createFile(join(tempDir, "herdctl.yaml"), `
+version: 1
+agents:
+  - path: ./agents/worker.yaml
+`);
+      await createFile(join(tempDir, "agents", "worker.yaml"), `
+name: worker
+workspace:
+  root: /absolute/workspace
+  auto_clone: false
+`);
+
+      const result = await loadConfig(tempDir);
+
+      expect(typeof result.agents[0].workspace).toBe("object");
+      const workspace = result.agents[0].workspace as { root: string };
+      expect(workspace.root).toBe("/absolute/workspace");
+    });
+
+    it("respects workspace from fleet defaults", async () => {
+      await createFile(join(tempDir, "herdctl.yaml"), `
+version: 1
+defaults:
+  workspace: ./default-workspace
+agents:
+  - path: ./agents/worker.yaml
+`);
+      await createFile(join(tempDir, "agents", "worker.yaml"), `
+name: worker
+`);
+
+      const result = await loadConfig(tempDir);
+
+      // Fleet default workspace gets resolved relative to fleet config dir,
+      // then used as the agent workspace default before normalization
+      expect(result.agents[0].workspace).toBe(join(tempDir, "default-workspace"));
+    });
+
+    it("agent workspace overrides fleet default workspace", async () => {
+      await createFile(join(tempDir, "herdctl.yaml"), `
+version: 1
+defaults:
+  workspace: ./default-workspace
+agents:
+  - path: ./agents/worker.yaml
+`);
+      await createFile(join(tempDir, "agents", "worker.yaml"), `
+name: worker
+workspace: ./custom-workspace
+`);
+
+      const result = await loadConfig(tempDir);
+
+      // Agent's relative workspace is resolved relative to agent config directory
+      expect(result.agents[0].workspace).toBe(join(tempDir, "agents", "custom-workspace"));
+    });
+  });
 });
