@@ -123,10 +123,11 @@ export class CLIRuntime implements RuntimeInterface {
   async *execute(options: RuntimeExecuteOptions): AsyncIterable<SDKMessage> {
     // Build CLI arguments
     // Note: -p is --print mode (print response and exit), prompt goes as positional arg
-    const args: string[] = [
-      "-p",
-      "--dangerously-skip-permissions",
-    ];
+    const args: string[] = ["-p"];
+
+    // Add permission mode from agent config (defaults to acceptEdits)
+    const permissionMode = options.agent.permission_mode ?? "acceptEdits";
+    args.push("--permission-mode", permissionMode);
 
     // Add session options
     if (options.resume) {

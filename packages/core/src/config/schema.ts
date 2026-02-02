@@ -15,6 +15,8 @@ export const PermissionModeSchema = z.enum([
   "acceptEdits",
   "bypassPermissions",
   "plan",
+  "delegate",
+  "dontAsk",
 ]);
 
 export const BashPermissionsSchema = z.object({

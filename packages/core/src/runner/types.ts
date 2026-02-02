@@ -171,7 +171,7 @@ export type SDKSystemPrompt =
 export interface SDKQueryOptions {
   allowedTools?: string[];
   deniedTools?: string[];
-  permissionMode?: "default" | "acceptEdits" | "bypassPermissions" | "plan";
+  permissionMode?: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "delegate" | "dontAsk";
   systemPrompt?: SDKSystemPrompt;
   settingSources?: string[];
   mcpServers?: Record<string, SDKMcpServerConfig>;
