@@ -159,6 +159,7 @@ describe("toSDKOptions", () => {
     it("transforms allowed_commands into Bash() patterns", () => {
       const agent = createTestAgent({
         permissions: {
+          mode: "acceptEdits",
           bash: {
             allowed_commands: ["git", "npm", "docker"],
           },
@@ -175,6 +176,7 @@ describe("toSDKOptions", () => {
     it("transforms denied_patterns into Bash() patterns", () => {
       const agent = createTestAgent({
         permissions: {
+          mode: "acceptEdits",
           bash: {
             denied_patterns: ["sudo *", "rm -rf /", "chmod 777 *"],
           },
@@ -191,6 +193,7 @@ describe("toSDKOptions", () => {
     it("merges bash allowed_commands with existing allowed_tools", () => {
       const agent = createTestAgent({
         permissions: {
+          mode: "acceptEdits",
           allowed_tools: ["Read", "Write"],
           bash: {
             allowed_commands: ["git", "npm"],
@@ -209,6 +212,7 @@ describe("toSDKOptions", () => {
     it("merges bash denied_patterns with existing denied_tools", () => {
       const agent = createTestAgent({
         permissions: {
+          mode: "acceptEdits",
           denied_tools: ["WebFetch"],
           bash: {
             denied_patterns: ["sudo *", "rm -rf /"],
@@ -226,6 +230,7 @@ describe("toSDKOptions", () => {
     it("handles both allowed_commands and denied_patterns together", () => {
       const agent = createTestAgent({
         permissions: {
+          mode: "acceptEdits",
           allowed_tools: ["Read"],
           denied_tools: ["Write"],
           bash: {
@@ -242,6 +247,7 @@ describe("toSDKOptions", () => {
     it("does not include bash patterns when not configured", () => {
       const agent = createTestAgent({
         permissions: {
+          mode: "acceptEdits",
           allowed_tools: ["Read"],
         },
       });
@@ -252,6 +258,7 @@ describe("toSDKOptions", () => {
     it("does not include bash patterns when empty arrays", () => {
       const agent = createTestAgent({
         permissions: {
+          mode: "acceptEdits",
           bash: {
             allowed_commands: [],
             denied_patterns: [],
