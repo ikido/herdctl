@@ -15,6 +15,23 @@ Docker containerization provides multiple benefits for agent execution:
 - **Clean environment** — Fresh or ephemeral containers per job
 - **Reproducibility** — Consistent execution environment across hosts
 
+## Prerequisites
+
+Before using Docker runtime, you must build the herdctl Docker image:
+
+```bash
+# From the herdctl repository root
+docker build -t herdctl/runtime:latest .
+```
+
+This image includes:
+- Node.js 22
+- Claude CLI (`@anthropic-ai/claude-code`)
+- Git and essential tools
+- Workspace directory at `/workspace`
+
+**Note:** The image must be built locally - there is no pre-built image on Docker Hub yet.
+
 ## Security Model
 
 Herdctl's Docker implementation follows security best practices to isolate agents and protect the host system.
@@ -70,7 +87,7 @@ All Docker configuration is optional. Defaults provide secure, sensible behavior
 ```yaml
 docker:
   enabled: true
-  image: "anthropic/claude-code:latest"
+  image: "herdctl/runtime:latest"
   network: "bridge"
   memory: "2g"
   cpu_shares: 1024
@@ -87,7 +104,7 @@ docker:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | `false` | Enable Docker execution |
-| `image` | string | `anthropic/claude-code:latest` | Docker image to use |
+| `image` | string | `herdctl/runtime:latest` | Docker image to use |
 | `network` | string | `bridge` | Network mode: `none`, `bridge`, `host` |
 | `memory` | string | `2g` | Memory limit |
 | `cpu_shares` | integer | — | CPU relative weight (optional) |
@@ -386,7 +403,7 @@ Maximum isolation for untrusted prompts:
 ```yaml
 docker:
   enabled: true
-  image: "anthropic/claude-code:latest"
+  image: "herdctl/runtime:latest"
   network: none              # No network access
   workspace_mode: ro         # Read-only workspace
   memory: "1g"               # Limited memory
@@ -402,7 +419,7 @@ Standard security with API access:
 ```yaml
 docker:
   enabled: true
-  image: "anthropic/claude-code:latest"
+  image: "herdctl/runtime:latest"
   network: bridge            # Full network via NAT
   workspace_mode: rw         # Read-write workspace
   memory: "2g"               # Standard memory

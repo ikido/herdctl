@@ -57,8 +57,11 @@ export interface DockerConfig {
 
 /**
  * Default Docker image for Claude Code containers
+ *
+ * Users must build this image locally using the Dockerfile in the repository root:
+ *   docker build -t herdctl/runtime:latest .
  */
-export const DEFAULT_DOCKER_IMAGE = "anthropic/claude-code:latest";
+export const DEFAULT_DOCKER_IMAGE = "herdctl/runtime:latest";
 
 /**
  * Default memory limit (2GB)
