@@ -34,6 +34,12 @@ export interface SessionOptions {
    * This prevents stale session IDs from being used for resume attempts.
    */
   timeout?: string;
+  /**
+   * Runtime type ("cli" or "sdk").
+   * If "cli", validates that CLI session files exist on disk.
+   * If "sdk" or undefined, only validates expiration (no file check).
+   */
+  runtime?: "cli" | "sdk";
 }
 
 /**
@@ -127,11 +133,17 @@ export async function getSessionInfo(
 
   const session = parseResult.data;
 
-  // If timeout is provided, validate session expiry and file existence
+  // If timeout is provided, validate session expiry and optionally file existence
   // Dynamic import to avoid circular dependency with session-validation.ts
   if (timeout) {
-    const { validateSessionWithFileCheck } = await import("./session-validation.js");
-    const validation = await validateSessionWithFileCheck(session, timeout);
+    const { validateSession, validateSessionWithFileCheck } = await import("./session-validation.js");
+
+    // For CLI runtime, check both expiration and file existence
+    // For SDK runtime (or unspecified), only check expiration
+    const validation = options.runtime === "cli"
+      ? await validateSessionWithFileCheck(session, timeout)
+      : validateSession(session, timeout);
+
     if (!validation.valid) {
       if (validation.reason === "expired" || validation.reason === "file_not_found") {
         logger.warn(

@@ -11,8 +11,12 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude CLI globally
-RUN npm install -g @anthropic-ai/claude-code
+# Install Claude CLI and Agent SDK globally
+RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-agent-sdk
+
+# Copy SDK wrapper script for Docker SDK runtime
+COPY packages/core/src/runner/runtime/docker-sdk-wrapper.js /usr/local/lib/docker-sdk-wrapper.js
+RUN chmod +x /usr/local/lib/docker-sdk-wrapper.js
 
 # Create directories that Claude CLI will need to write to
 # Make them world-writable so any UID can use them (container isolation provides security)

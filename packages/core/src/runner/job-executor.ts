@@ -208,6 +208,7 @@ export class JobExecutor {
       const existingSession = await getSessionInfo(sessionsDir, agent.name, {
         timeout: sessionTimeout,
         logger: this.logger,
+        runtime: agent.runtime ?? "sdk", // Pass runtime for correct validation
       });
 
       if (existingSession?.session_id) {
@@ -536,7 +537,9 @@ export class JobExecutor {
         const sessionsDir = join(stateDir, "sessions");
 
         // Get existing session to determine if updating or creating
-        const existingSession = await getSessionInfo(sessionsDir, agent.name);
+        const existingSession = await getSessionInfo(sessionsDir, agent.name, {
+          runtime: agent.runtime ?? "sdk",
+        });
 
         // Store the current working directory with the session
         const currentWorkingDirectory = resolveWorkingDirectory(agent);

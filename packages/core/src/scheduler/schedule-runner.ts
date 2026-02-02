@@ -331,6 +331,7 @@ export async function runSchedule(
         const existingSession = await getSessionInfo(sessionsDir, agent.name, {
           timeout: sessionTimeout,
           logger,
+          runtime: agent.runtime ?? "sdk",
         });
         if (existingSession?.session_id) {
           sessionId = existingSession.session_id;
