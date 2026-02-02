@@ -155,6 +155,115 @@ describe("toSDKOptions", () => {
     });
   });
 
+  describe("bash permissions", () => {
+    it("transforms allowed_commands into Bash() patterns", () => {
+      const agent = createTestAgent({
+        permissions: {
+          bash: {
+            allowed_commands: ["git", "npm", "docker"],
+          },
+        },
+      });
+      const result = toSDKOptions(agent);
+      expect(result.allowedTools).toEqual([
+        "Bash(git *)",
+        "Bash(npm *)",
+        "Bash(docker *)",
+      ]);
+    });
+
+    it("transforms denied_patterns into Bash() patterns", () => {
+      const agent = createTestAgent({
+        permissions: {
+          bash: {
+            denied_patterns: ["sudo *", "rm -rf /", "chmod 777 *"],
+          },
+        },
+      });
+      const result = toSDKOptions(agent);
+      expect(result.deniedTools).toEqual([
+        "Bash(sudo *)",
+        "Bash(rm -rf /)",
+        "Bash(chmod 777 *)",
+      ]);
+    });
+
+    it("merges bash allowed_commands with existing allowed_tools", () => {
+      const agent = createTestAgent({
+        permissions: {
+          allowed_tools: ["Read", "Write"],
+          bash: {
+            allowed_commands: ["git", "npm"],
+          },
+        },
+      });
+      const result = toSDKOptions(agent);
+      expect(result.allowedTools).toEqual([
+        "Read",
+        "Write",
+        "Bash(git *)",
+        "Bash(npm *)",
+      ]);
+    });
+
+    it("merges bash denied_patterns with existing denied_tools", () => {
+      const agent = createTestAgent({
+        permissions: {
+          denied_tools: ["WebFetch"],
+          bash: {
+            denied_patterns: ["sudo *", "rm -rf /"],
+          },
+        },
+      });
+      const result = toSDKOptions(agent);
+      expect(result.deniedTools).toEqual([
+        "WebFetch",
+        "Bash(sudo *)",
+        "Bash(rm -rf /)",
+      ]);
+    });
+
+    it("handles both allowed_commands and denied_patterns together", () => {
+      const agent = createTestAgent({
+        permissions: {
+          allowed_tools: ["Read"],
+          denied_tools: ["Write"],
+          bash: {
+            allowed_commands: ["git"],
+            denied_patterns: ["sudo *"],
+          },
+        },
+      });
+      const result = toSDKOptions(agent);
+      expect(result.allowedTools).toEqual(["Read", "Bash(git *)"]);
+      expect(result.deniedTools).toEqual(["Write", "Bash(sudo *)"]);
+    });
+
+    it("does not include bash patterns when not configured", () => {
+      const agent = createTestAgent({
+        permissions: {
+          allowed_tools: ["Read"],
+        },
+      });
+      const result = toSDKOptions(agent);
+      expect(result.allowedTools).toEqual(["Read"]);
+    });
+
+    it("does not include bash patterns when empty arrays", () => {
+      const agent = createTestAgent({
+        permissions: {
+          bash: {
+            allowed_commands: [],
+            denied_patterns: [],
+          },
+        },
+      });
+      const result = toSDKOptions(agent);
+      expect(result.allowedTools).toBeUndefined();
+      expect(result.deniedTools).toBeUndefined();
+    });
+  });
+
   describe("system prompt", () => {
     it("uses claude_code preset for system prompt by default", () => {
       const agent = createTestAgent();
@@ -288,6 +397,36 @@ describe("toSDKOptions", () => {
       });
       const result = toSDKOptions(agent);
       expect(result.mcpServers).toEqual({});
+    });
+  });
+
+  describe("model", () => {
+    it("passes model when specified in agent config", () => {
+      const agent = createTestAgent({
+        model: "claude-opus-4",
+      });
+      const result = toSDKOptions(agent);
+      expect(result.model).toBe("claude-opus-4");
+    });
+
+    it("does not include model when not specified", () => {
+      const agent = createTestAgent();
+      const result = toSDKOptions(agent);
+      expect(result.model).toBeUndefined();
+    });
+
+    it("handles various model identifiers", () => {
+      const models = [
+        "claude-sonnet-4",
+        "claude-opus-4",
+        "claude-haiku-4",
+      ];
+
+      for (const model of models) {
+        const agent = createTestAgent({ model });
+        const result = toSDKOptions(agent);
+        expect(result.model).toBe(model);
+      }
     });
   });
 

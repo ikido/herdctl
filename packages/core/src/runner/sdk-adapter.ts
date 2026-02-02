@@ -172,6 +172,23 @@ export function toSDKOptions(
     result.deniedTools = agent.permissions.denied_tools;
   }
 
+  // Bash permissions - transform to Bash() patterns
+  // Transform allowed_commands into Bash(command *) patterns
+  if (agent.permissions?.bash?.allowed_commands?.length) {
+    const bashPatterns = agent.permissions.bash.allowed_commands.map(
+      (cmd) => `Bash(${cmd} *)`
+    );
+    result.allowedTools = [...(result.allowedTools || []), ...bashPatterns];
+  }
+
+  // Transform denied_patterns into Bash(pattern) patterns
+  if (agent.permissions?.bash?.denied_patterns?.length) {
+    const bashDeniedPatterns = agent.permissions.bash.denied_patterns.map(
+      (pattern) => `Bash(${pattern})`
+    );
+    result.deniedTools = [...(result.deniedTools || []), ...bashDeniedPatterns];
+  }
+
   // System prompt
   result.systemPrompt = buildSystemPrompt(agent);
 
@@ -217,6 +234,11 @@ export function toSDKOptions(
       typeof working_directory === "string"
         ? working_directory
         : working_directory.root;
+  }
+
+  // Model selection
+  if (agent.model) {
+    result.model = agent.model;
   }
 
   return result;

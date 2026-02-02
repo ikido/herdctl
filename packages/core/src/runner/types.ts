@@ -181,6 +181,8 @@ export interface SDKQueryOptions {
   maxTurns?: number;
   /** Current working directory for the session */
   cwd?: string;
+  /** Model to use for the session */
+  model?: string;
 }
 
 // =============================================================================
