@@ -650,6 +650,10 @@ export class DiscordManager {
 
     // Start typing indicator while processing
     const stopTyping = event.startTyping();
+    logger.debug(`[TYPING] Started typing indicator for agent '${agentName}'`);
+
+    // Track if we've stopped typing to avoid multiple calls
+    let typingStopped = false;
 
     try {
       // Import FleetManager dynamically to avoid circular dependency
@@ -679,28 +683,45 @@ export class DiscordManager {
             if (content) {
               // Each assistant message is a complete turn - send immediately
               await streamer.addMessageAndSend(content);
+
+              // Stop typing indicator as soon as we send the first message
+              // This prevents the interval from sending more typing indicators after messages are visible
+              if (!typingStopped) {
+                logger.debug(`[TYPING] First message sent for agent '${agentName}', stopping typing indicator`);
+                stopTyping();
+                typingStopped = true;
+              }
             }
           }
         },
       });
 
-      // Stop typing indicator immediately after SDK execution completes
-      // This prevents the interval from sending another typing indicator while we flush/send messages
-      stopTyping();
+      logger.debug(`[TYPING] SDK execution completed for agent '${agentName}', typingStopped=${typingStopped}`);
 
       // Flush any remaining buffered content
+      logger.debug(`[TYPING] Flushing remaining buffered content for agent '${agentName}'`);
       await streamer.flush();
+      logger.debug(`[TYPING] Flush complete for agent '${agentName}'`);
 
       logger.info(`Discord job completed: ${result.jobId} for agent '${agentName}'${result.sessionId ? ` (session: ${result.sessionId})` : ""}`);
 
       // If no messages were sent, send an appropriate message based on success/failure
       if (!streamer.hasSentMessages()) {
+        logger.debug(`[TYPING] No messages sent, sending fallback message for agent '${agentName}'`);
         if (result.success) {
           await event.reply("I've completed the task, but I don't have a specific response to share.");
         } else {
           // Job failed without streaming any messages - send error details
           const errorMessage = result.errorDetails?.message ?? result.error?.message ?? "An unknown error occurred";
           await event.reply(`❌ **Error:** ${errorMessage}\n\nThe task could not be completed. Please check the logs for more details.`);
+        }
+        logger.debug(`[TYPING] Fallback message sent for agent '${agentName}'`);
+
+        // Stop typing after sending fallback message (if not already stopped)
+        if (!typingStopped) {
+          logger.debug(`[TYPING] Stopping typing indicator after fallback message for agent '${agentName}'`);
+          stopTyping();
+          typingStopped = true;
         }
       }
 
@@ -749,7 +770,13 @@ export class DiscordManager {
     } finally {
       // Safety net: stop typing indicator if not already stopped
       // (Should already be stopped after sending messages, but this ensures cleanup on errors)
-      stopTyping();
+      if (!typingStopped) {
+        logger.debug(`[TYPING] Finally block - typing not stopped yet, calling stopTyping() as safety net for agent '${agentName}'`);
+        stopTyping();
+        logger.debug(`[TYPING] Finally block - stopTyping() called for agent '${agentName}'`);
+      } else {
+        logger.debug(`[TYPING] Finally block - typing already stopped for agent '${agentName}', skipping`);
+      }
     }
   }
 
