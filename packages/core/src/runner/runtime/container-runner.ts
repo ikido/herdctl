@@ -150,19 +150,22 @@ export class ContainerRunner implements RuntimeInterface {
   ): AsyncIterable<SDKMessage> {
     // Create CLI runtime with Docker-specific spawner
     const cliRuntime = new CLIRuntime({
-      processSpawner: (args, _cwd, signal) => {
-        // Build docker exec command: docker exec <container> sh -c 'cd /workspace && claude <args>'
-        const claudeCommand = `cd /workspace && claude ${args.map(arg => {
+      processSpawner: (args, _cwd, prompt, signal) => {
+        // Build docker exec command with prompt piped to stdin
+        // Uses printf to avoid issues with newlines and special chars in prompt
+        // Command: docker exec <container> sh -c 'cd /workspace && printf %s "prompt" | claude <args>'
+        const escapedPrompt = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const claudeArgs = args.map(arg => {
           // Escape single quotes in arguments
           return `'${arg.replace(/'/g, "'\\''")}'`;
-        }).join(" ")}`;
+        }).join(" ");
+        const claudeCommand = `cd /workspace && printf %s "${escapedPrompt}" | claude ${claudeArgs}`;
 
         console.log("[ContainerRunner] Executing docker command:", "docker", ["exec", containerId, "sh", "-c", claudeCommand]);
-        console.log("[ContainerRunner] Full command string:", claudeCommand);
+        console.log("[ContainerRunner] Prompt length:", prompt.length);
 
         // execa returns Subprocess directly (which is promise-like)
         return execa("docker", ["exec", containerId, "sh", "-c", claudeCommand], {
-          stdin: "ignore",
           cancelSignal: signal,
         });
       },

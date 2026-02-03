@@ -33,10 +33,16 @@ import { transformMcpServers } from "../sdk-adapter.js";
  *
  * Returns Subprocess directly (not wrapped in Promise) - execa returns
  * a special promise-like object (Subprocess) that has extra properties.
+ *
+ * @param args - CLI arguments (without prompt)
+ * @param cwd - Working directory
+ * @param prompt - Prompt text to provide via stdin (required for -p mode)
+ * @param signal - AbortSignal for cancellation
  */
 export type ProcessSpawner = (
   args: string[],
   cwd: string,
+  prompt: string,
   signal?: AbortSignal
 ) => Subprocess;
 
@@ -95,9 +101,13 @@ export class CLIRuntime implements RuntimeInterface {
   private sessionDirOverride?: string;
 
   constructor(options?: CLIRuntimeOptions) {
-    // Default to local execa spawning
-    this.processSpawner = options?.processSpawner ?? ((args, cwd, signal) =>
-      execa("claude", args, { cwd, stdin: "ignore", cancelSignal: signal })
+    // Default to local execa spawning with prompt via stdin
+    this.processSpawner = options?.processSpawner ?? ((args, cwd, prompt, signal) =>
+      execa("claude", args, {
+        cwd,
+        input: prompt,  // Provide prompt via stdin (required for -p mode)
+        cancelSignal: signal
+      })
     );
 
     this.sessionDirOverride = options?.sessionDirOverride;
@@ -123,7 +133,8 @@ export class CLIRuntime implements RuntimeInterface {
    */
   async *execute(options: RuntimeExecuteOptions): AsyncIterable<SDKMessage> {
     // Build CLI arguments
-    // Note: -p is --print mode (print response and exit), prompt goes via --prompt flag
+    // Note: -p is --print mode (print response and exit)
+    // Prompt is provided via stdin, not as a CLI argument
     const args: string[] = ["-p"];
 
     // Add permission mode from agent config (defaults to acceptEdits)
@@ -140,31 +151,48 @@ export class CLIRuntime implements RuntimeInterface {
       args.push("--system-prompt", options.agent.system_prompt);
     }
 
+    // Collect all allowed tools into a single array to avoid multiple --allowedTools flags
+    const allAllowedTools: string[] = [];
+
     // Add allowed tools if specified
     if (options.agent.permissions?.allowed_tools?.length) {
-      args.push("--allowedTools", ...options.agent.permissions.allowed_tools);
+      allAllowedTools.push(...options.agent.permissions.allowed_tools);
     }
 
-    // Add denied tools if specified
-    if (options.agent.permissions?.denied_tools?.length) {
-      args.push("--disallowedTools", ...options.agent.permissions.denied_tools);
-    }
-
-    // Add bash permissions if specified
-    // Transform allowed_commands into Bash(command *) patterns
+    // Add bash allowed commands as Bash(command *) patterns
     if (options.agent.permissions?.bash?.allowed_commands?.length) {
       const bashPatterns = options.agent.permissions.bash.allowed_commands.map(
         (cmd) => `Bash(${cmd} *)`
       );
-      args.push("--allowedTools", ...bashPatterns);
+      allAllowedTools.push(...bashPatterns);
     }
 
-    // Transform denied_patterns into Bash(pattern) patterns
+    // Add all allowed tools as comma-separated string to prevent consuming subsequent args
+    // Note: --allowedTools accepts "comma or space-separated" but space-separated consumes
+    // all following args, so we must use comma-separated
+    if (allAllowedTools.length > 0) {
+      args.push("--allowedTools", allAllowedTools.join(","));
+    }
+
+    // Collect all denied tools into a single array
+    const allDeniedTools: string[] = [];
+
+    // Add denied tools if specified
+    if (options.agent.permissions?.denied_tools?.length) {
+      allDeniedTools.push(...options.agent.permissions.denied_tools);
+    }
+
+    // Add bash denied patterns as Bash(pattern) patterns
     if (options.agent.permissions?.bash?.denied_patterns?.length) {
       const bashDeniedPatterns = options.agent.permissions.bash.denied_patterns.map(
         (pattern) => `Bash(${pattern})`
       );
-      args.push("--disallowedTools", ...bashDeniedPatterns);
+      allDeniedTools.push(...bashDeniedPatterns);
+    }
+
+    // Add all denied tools as comma-separated string
+    if (allDeniedTools.length > 0) {
+      args.push("--disallowedTools", allDeniedTools.join(","));
     }
 
     // Add setting sources if specified (comma-separated)
@@ -188,8 +216,7 @@ export class CLIRuntime implements RuntimeInterface {
       args.push("--fork-session");
     }
 
-    // Add prompt via --prompt flag (required when using -p mode)
-    args.push("--prompt", options.prompt);
+    // Note: Prompt is NOT added to args - it's provided via stdin (see processSpawner call below)
 
     // DEBUG: Log the command being executed
     console.log("[CLIRuntime] Executing command:", "claude", args);
@@ -220,10 +247,10 @@ export class CLIRuntime implements RuntimeInterface {
       // Record start time before spawning process
       const processStartTime = Date.now();
 
-      // Spawn claude subprocess (we won't read its output)
+      // Spawn claude subprocess with prompt via stdin
       // Uses custom spawner if provided (e.g., for Docker execution)
       // Note: processSpawner returns Subprocess directly (which is promise-like)
-      subprocess = this.processSpawner(args, cwd, options.abortController?.signal);
+      subprocess = this.processSpawner(args, cwd, options.prompt, options.abortController?.signal);
 
       console.log("[CLIRuntime] Subprocess spawned, PID:", subprocess.pid);
 

@@ -25,11 +25,20 @@ runtime:
 - Standard token consumption
 
 **CLI Runtime**:
-- Invokes `claude-p` directly (or custom Claude CLI fork)
+- Invokes `claude -p` directly (or custom Claude CLI fork)
 - Preserves Claude Max tokens instead of consuming API credits
-- Parses CLI output for streaming messages
-- Full feature parity with SDK runtime
+- Session file watching for message streaming
 - Works with both host and Docker execution
+
+**Full Configuration Pass-Through**:
+Both runtimes support the complete agent configuration:
+- `model` - Model selection (e.g., claude-sonnet-4-20250514)
+- `system_prompt` - Custom system prompts
+- `permission_mode` - Permission handling (acceptEdits, plan, etc.)
+- `permissions.allowed_tools` / `permissions.denied_tools` - Tool access control
+- `permissions.bash.allowed_commands` / `permissions.bash.denied_patterns` - Bash restrictions
+- `mcp_servers` - MCP server configuration
+- `setting_sources` - Setting source configuration
 
 **Use Cases**:
 - Preserve Claude Max tokens for long-running agents
