@@ -78,7 +78,7 @@ export class ContainerRunner implements RuntimeInterface {
 
     // Build mounts and environment
     const mounts = buildContainerMounts(agent, this.config, this.stateDir);
-    const env = buildContainerEnv(agent);
+    const env = buildContainerEnv(agent, this.config);
 
     // Get or create container
     const container = await this.manager.getOrCreateContainer(
@@ -105,9 +105,6 @@ export class ContainerRunner implements RuntimeInterface {
       else {
         throw new Error(`Unsupported runtime type for Docker execution: ${this.wrapped.constructor.name}`);
       }
-
-      // Cleanup old containers
-      await this.manager.cleanupOldContainers(agent.name, this.config.maxContainers);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -124,6 +121,15 @@ export class ContainerRunner implements RuntimeInterface {
         } catch {
           // Ignore cleanup errors
         }
+      }
+    } finally {
+      // Always cleanup old containers, regardless of success/failure
+      // This prevents container accumulation from failed executions
+      try {
+        await this.manager.cleanupOldContainers(agent.name, this.config.maxContainers);
+      } catch (cleanupError) {
+        // Log cleanup errors but don't fail the execution
+        console.error('[ContainerRunner] Failed to cleanup old containers:', cleanupError);
       }
     }
   }
