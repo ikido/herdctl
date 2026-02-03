@@ -123,7 +123,7 @@ export class CLIRuntime implements RuntimeInterface {
    */
   async *execute(options: RuntimeExecuteOptions): AsyncIterable<SDKMessage> {
     // Build CLI arguments
-    // Note: -p is --print mode (print response and exit), prompt goes as positional arg
+    // Note: -p is --print mode (print response and exit), prompt goes via --prompt flag
     const args: string[] = ["-p"];
 
     // Add permission mode from agent config (defaults to acceptEdits)
@@ -188,8 +188,8 @@ export class CLIRuntime implements RuntimeInterface {
       args.push("--fork-session");
     }
 
-    // Add prompt as positional argument at the end
-    args.push(options.prompt);
+    // Add prompt via --prompt flag (required when using -p mode)
+    args.push("--prompt", options.prompt);
 
     // DEBUG: Log the command being executed
     console.log("[CLIRuntime] Executing command:", "claude", args);
