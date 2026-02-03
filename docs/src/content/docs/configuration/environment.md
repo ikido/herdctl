@@ -212,6 +212,7 @@ For production deployments, use your platform's secrets management:
 ### API Tokens and Keys
 
 ```yaml
+# MCP servers (can be configured at agent or fleet level)
 mcp_servers:
   github:
     command: npx
@@ -219,9 +220,21 @@ mcp_servers:
     env:
       GITHUB_TOKEN: ${GITHUB_TOKEN}
 
+# Docker environment variables (fleet-level only)
+# herdctl.yaml
+defaults:
+  docker:
+    env:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      API_KEY: ${API_KEY}
+
 # Chat integrations are per-agent (each agent has its own bot)
 # See agent config for chat settings
 ```
+
+:::note[Docker Environment Variables]
+The `docker.env` option is restricted to fleet config due to the [tiered security model](/configuration/docker/#tiered-security-model). Agents cannot configure their own Docker environment variables.
+:::
 
 ### URLs and Endpoints
 

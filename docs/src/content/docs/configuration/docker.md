@@ -15,6 +15,70 @@ Docker containerization provides multiple benefits for agent execution:
 - **Clean environment** — Fresh or ephemeral containers per job
 - **Reproducibility** — Consistent execution environment across hosts
 
+## Tiered Security Model
+
+Docker configuration options are split into two tiers based on security risk:
+
+### Agent-Level Options (Safe)
+
+These options can be set in agent config files (`herdctl-agent.yaml`). They control resources and behavior but cannot grant dangerous capabilities:
+
+| Option | Description |
+|--------|-------------|
+| `enabled` | Enable Docker execution |
+| `ephemeral` | Fresh container per job |
+| `memory` | Memory limit |
+| `cpu_shares` | CPU relative weight |
+| `cpu_period` / `cpu_quota` | Hard CPU limits |
+| `max_containers` | Container pool limit |
+| `workspace_mode` | Workspace mount mode (`rw` or `ro`) |
+| `tmpfs` | Tmpfs mounts for in-memory temp storage |
+| `pids_limit` | Maximum number of processes |
+| `labels` | Container labels for organization |
+
+### Fleet-Level Options (Potentially Dangerous)
+
+These options can **only** be set in fleet config (`herdctl.yaml`) or via per-agent overrides. They can grant capabilities that could be exploited:
+
+| Option | Risk | Description |
+|--------|------|-------------|
+| `image` | Medium | Custom Docker image could contain malicious code |
+| `network` | High | `host` mode bypasses network isolation |
+| `volumes` | Critical | Could mount sensitive host directories |
+| `user` | Medium | Could run as privileged user |
+| `ports` | Medium | Exposes container ports to host/network |
+| `env` | High | Could inject credentials or modify behavior |
+| `host_config` | Critical | Raw dockerode passthrough, full Docker access |
+
+### Why the Split?
+
+Agent config files live in the agent's working directory, which the agent can modify. If dangerous options were allowed at agent level, an agent could:
+
+- Grant itself `network: host` to bypass network isolation
+- Mount `/etc/passwd` or `~/.ssh` via `volumes`
+- Inject malicious environment variables
+- Run as root via `user: "0:0"`
+
+By restricting dangerous options to fleet config (which agents cannot modify), you maintain security even if an agent is compromised.
+
+### Per-Agent Overrides
+
+To set fleet-level options for specific agents, use overrides in your fleet config:
+
+```yaml
+# herdctl.yaml
+agents:
+  - path: ./agents/trusted-agent.yaml
+    overrides:
+      docker:
+        network: host           # This agent needs host network
+        env:
+          GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+  - path: ./agents/standard-agent.yaml
+    # Uses fleet defaults, no overrides needed
+```
+
 ## Prerequisites
 
 Before using Docker runtime, you must build the herdctl Docker image:
@@ -82,37 +146,107 @@ When Docker is enabled, the following security measures are enforced:
 
 All Docker configuration is optional. Defaults provide secure, sensible behavior.
 
-### Complete Example
+### Agent-Level Example
+
+Options available in agent config files:
 
 ```yaml
+# herdctl-agent.yaml
 docker:
   enabled: true
-  image: "herdctl/runtime:latest"
-  network: "bridge"
   memory: "2g"
   cpu_shares: 1024
-  user: "1000:1000"
+  cpu_period: 100000
+  cpu_quota: 50000        # 50% CPU limit
   workspace_mode: "rw"
-  volumes:
-    - "/host/data:/container/data:ro"
-  ephemeral: false
+  ephemeral: true
   max_containers: 5
+  tmpfs:
+    - "/tmp"
+    - "/run"
+  pids_limit: 100
+  labels:
+    team: backend
+    environment: staging
 ```
 
+### Fleet-Level Example
+
+Full options available in fleet config:
+
+```yaml
+# herdctl.yaml
+defaults:
+  docker:
+    enabled: true
+    image: "herdctl/runtime:latest"
+    network: "bridge"
+    memory: "2g"
+    user: "1000:1000"
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+    volumes:
+      - "/host/data:/container/data:ro"
+    ports:
+      - "8080:80"
+```
+
+### Advanced: host_config Passthrough
+
+For dockerode options not in our schema, use `host_config` at fleet level:
+
+```yaml
+# herdctl.yaml
+defaults:
+  docker:
+    enabled: true
+    memory: "2g"
+    host_config:           # Raw dockerode HostConfig
+      ShmSize: 67108864    # 64MB shared memory
+      Privileged: true     # Use with extreme caution!
+      Devices:
+        - PathOnHost: "/dev/nvidia0"
+          PathInContainer: "/dev/nvidia0"
+          CgroupPermissions: "rwm"
+```
+
+Values in `host_config` override any translated options. See [dockerode HostConfig](https://github.com/apocas/dockerode) for available options.
+
+:::caution[host_config Security]
+`host_config` provides unrestricted access to Docker's HostConfig. Only use for advanced scenarios where our schema doesn't provide the option you need. Review all options carefully.
+:::
+
 ### Field Reference
+
+#### Agent-Level Fields (Safe)
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | `false` | Enable Docker execution |
+| `ephemeral` | boolean | `true` | Fresh container per job vs reuse |
+| `memory` | string | `2g` | Memory limit (e.g., `"512m"`, `"4g"`) |
+| `cpu_shares` | integer | — | CPU relative weight (soft limit) |
+| `cpu_period` | integer | — | CPU CFS period in microseconds |
+| `cpu_quota` | integer | — | CPU CFS quota in microseconds |
+| `max_containers` | integer | `5` | Container pool limit |
+| `workspace_mode` | string | `rw` | Workspace mount: `rw` or `ro` |
+| `tmpfs` | string[] | — | Tmpfs mounts (e.g., `["/tmp", "/run"]`) |
+| `pids_limit` | integer | — | Max processes (prevents fork bombs) |
+| `labels` | object | — | Container labels (key-value pairs) |
+
+#### Fleet-Level Fields (Potentially Dangerous)
+
+These fields are **only** available in fleet config or per-agent overrides:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
 | `image` | string | `herdctl/runtime:latest` | Docker image to use |
 | `network` | string | `bridge` | Network mode: `none`, `bridge`, `host` |
-| `memory` | string | `2g` | Memory limit |
-| `cpu_shares` | integer | — | CPU relative weight (optional) |
 | `user` | string | Host UID:GID | Container user (e.g., `"1000:1000"`) |
-| `workspace_mode` | string | `rw` | Workspace mount: `rw` (read-write) or `ro` (read-only) |
-| `volumes` | array | `[]` | Additional volume mounts |
-| `ephemeral` | boolean | `true` | Fresh container per job vs reuse |
-| `max_containers` | integer | `5` | Container pool limit |
+| `volumes` | string[] | `[]` | Additional volume mounts |
+| `ports` | string[] | — | Port bindings (e.g., `["8080:80"]`) |
+| `env` | object | — | Environment variables |
+| `host_config` | object | — | Raw dockerode HostConfig passthrough |
 
 ## Network Modes
 
@@ -251,7 +385,7 @@ docker:
 - Standard agents: `2g` - `4g`
 - Heavy workloads: `4g` - `8g`
 
-### CPU Shares
+### CPU Shares (Soft Limit)
 
 CPU shares control relative CPU weight when contention occurs.
 
@@ -274,6 +408,83 @@ docker:
 - Multiple containers competing for CPU
 - Prioritize critical agents
 - Limit background agents
+
+### CPU Period/Quota (Hard Limit)
+
+For precise CPU limiting, use `cpu_period` and `cpu_quota` together:
+
+```yaml
+docker:
+  cpu_period: 100000   # 100ms period (default)
+  cpu_quota: 50000     # 50ms quota = 50% CPU
+```
+
+**How it works:**
+- `cpu_period` is the scheduling period in microseconds (typically 100000 = 100ms)
+- `cpu_quota` is the max CPU time allowed per period
+- Ratio `cpu_quota / cpu_period` = CPU limit (0.5 = 50% of one core)
+
+**Examples:**
+| Period | Quota | CPU Limit |
+|--------|-------|-----------|
+| 100000 | 100000 | 100% (1 core) |
+| 100000 | 50000 | 50% (0.5 cores) |
+| 100000 | 200000 | 200% (2 cores) |
+| 100000 | 25000 | 25% (0.25 cores) |
+
+**When to use:**
+- Need guaranteed CPU limits (not just priority)
+- Multi-tenant environments
+- Cost control (limit API-heavy agents)
+
+### Tmpfs Mounts
+
+Mount temporary filesystems in memory for fast temp storage:
+
+```yaml
+docker:
+  tmpfs:
+    - "/tmp"
+    - "/run"
+```
+
+**Benefits:**
+- Faster than disk I/O
+- Automatically cleared on container stop
+- No disk space usage
+- Good for build caches, temp files
+
+### Process Limits
+
+Prevent fork bombs and runaway processes:
+
+```yaml
+docker:
+  pids_limit: 100  # Max 100 processes
+```
+
+**Recommended values:**
+- Standard agents: `100-200`
+- Build agents (many npm processes): `500-1000`
+- Minimal agents: `50`
+
+### Container Labels
+
+Add labels for organization and filtering:
+
+```yaml
+docker:
+  labels:
+    team: backend
+    environment: production
+    cost-center: engineering
+```
+
+Use labels with Docker commands:
+```bash
+docker ps --filter "label=team=backend"
+docker stats --filter "label=environment=production"
+```
 
 ## Path Translation
 
@@ -398,18 +609,27 @@ If container user doesn't match host user, you may encounter permission issues a
 
 ### High Security Configuration
 
-Maximum isolation for untrusted prompts:
+Maximum isolation for untrusted prompts. Agent-level options only:
 
 ```yaml
+# herdctl-agent.yaml (agent config)
 docker:
   enabled: true
-  image: "herdctl/runtime:latest"
-  network: none              # No network access
   workspace_mode: ro         # Read-only workspace
   memory: "1g"               # Limited memory
   cpu_shares: 512            # Lower priority
+  pids_limit: 50             # Limit processes
   # ephemeral: true is default (fresh container each run)
-  user: "1000:1000"          # Non-root user
+```
+
+Fleet config sets the secure defaults:
+
+```yaml
+# herdctl.yaml (fleet config)
+defaults:
+  docker:
+    network: none            # No network access (maximum isolation)
+    user: "1000:1000"        # Non-root user
 ```
 
 ### Balanced Configuration
@@ -417,31 +637,80 @@ docker:
 Standard security with API access:
 
 ```yaml
+# herdctl-agent.yaml (agent config)
 docker:
   enabled: true
-  image: "herdctl/runtime:latest"
-  network: bridge            # Full network via NAT
   workspace_mode: rw         # Read-write workspace
   memory: "2g"               # Standard memory
-  ephemeral: false           # Opt-in to container reuse for speed
+  ephemeral: false           # Container reuse for speed
   max_containers: 5          # Keep last 5 containers
+  tmpfs:
+    - "/tmp"                 # Fast temp storage
+```
+
+Fleet config provides network and credentials:
+
+```yaml
+# herdctl.yaml (fleet config)
+defaults:
+  docker:
+    network: bridge          # Full network via NAT
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
 ```
 
 ### Development Configuration
 
-Fast iteration with debugging:
+Fast iteration with debugging. Use fleet-level overrides for dangerous options:
 
 ```yaml
+# herdctl.yaml (fleet config)
+agents:
+  - path: ./agents/dev-agent.yaml
+    overrides:
+      docker:
+        network: host              # Full network access
+        volumes:
+          - "${HOME}/.cache:/cache:rw"  # Shared cache
+```
+
+```yaml
+# ./agents/dev-agent.yaml (agent config)
+name: dev-agent
 docker:
   enabled: true
-  network: host              # Full network access
   workspace_mode: rw         # Read-write access
   memory: "4g"               # Generous memory
-  ephemeral: false           # Opt-in to container reuse for faster iteration
+  ephemeral: false           # Container reuse for faster iteration
   max_containers: 10         # Keep more containers for debugging
-  volumes:
-    - "${HOME}/.cache:/cache:rw"  # Shared cache
 ```
+
+### Infrastructure Agent (Homelab)
+
+Agents managing local infrastructure need host network access:
+
+```yaml
+# herdctl.yaml (fleet config)
+agents:
+  - path: ./agents/homelab.yaml
+    overrides:
+      docker:
+        network: host        # Required for SSH to local machines
+        env:
+          SSH_AUTH_SOCK: "${SSH_AUTH_SOCK}"
+```
+
+```yaml
+# ./agents/homelab.yaml (agent config)
+name: homelab
+docker:
+  enabled: true
+  memory: "2g"
+```
+
+:::caution[Host Network Security]
+`network: host` bypasses container network isolation. Only use for trusted agents managing local infrastructure.
+:::
 
 ## Combining with Runtime Selection
 
@@ -548,13 +817,15 @@ See [Runtime Configuration](/configuration/runtime/) for detailed runtime compar
 
 ## Security Best Practices
 
-1. **Start with maximum isolation** — Use `network: none` + `workspace_mode: ro` initially
-2. **Relax as needed** — Only grant network/write access when required
-3. **Prefer ephemeral containers** — Default `ephemeral: true` provides best isolation (avoid `ephemeral: false` in production)
-4. **Set resource limits** — Always configure `memory` limits
-5. **Avoid host network** — Only use `network: host` for trusted agents
-6. **Match host user** — Keep default `user` setting for file permissions
-7. **Read-only auth** — Auth files are always read-only (automatic)
+1. **Use the tiered model** — Keep dangerous options (`network`, `volumes`, `env`) in fleet config only
+2. **Start with maximum isolation** — Use `network: none` + `workspace_mode: ro` initially
+3. **Relax as needed** — Only grant network/write access when required
+4. **Prefer ephemeral containers** — Default `ephemeral: true` provides best isolation
+5. **Set resource limits** — Always configure `memory` and consider `pids_limit`
+6. **Avoid host network** — Only use `network: host` for trusted infrastructure agents
+7. **Use per-agent overrides** — Grant dangerous capabilities to specific agents, not all
+8. **Audit host_config usage** — Review any `host_config` settings carefully
+9. **Read-only auth** — Auth files are always read-only (automatic)
 
 ## Related Pages
 

@@ -5,7 +5,7 @@
  * Uses dockerode for Docker API communication.
  */
 
-import type { Container, ContainerCreateOptions, Exec } from "dockerode";
+import type { Container, ContainerCreateOptions, Exec, HostConfig } from "dockerode";
 import Dockerode from "dockerode";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -82,6 +82,59 @@ export class ContainerManager {
   ): Promise<Container> {
     const containerName = `herdctl-${agentName}-${Date.now()}`;
 
+    // Build port bindings for HostConfig
+    const portBindings: Record<string, Array<{ HostPort: string }>> = {};
+    const exposedPorts: Record<string, object> = {};
+    for (const port of config.ports) {
+      const containerPortKey = `${port.containerPort}/tcp`;
+      portBindings[containerPortKey] = [{ HostPort: String(port.hostPort) }];
+      exposedPorts[containerPortKey] = {};
+    }
+
+    // Build tmpfs mounts for HostConfig
+    const tmpfsMounts: Record<string, string> = {};
+    for (const tmpfs of config.tmpfs) {
+      tmpfsMounts[tmpfs.path] = tmpfs.options ?? "";
+    }
+
+    // Build our translated HostConfig
+    const translatedHostConfig: HostConfig = {
+      // Resource limits
+      Memory: config.memoryBytes,
+      MemorySwap: config.memoryBytes, // Same as Memory = no swap
+      CpuShares: config.cpuShares, // undefined = no limit (full CPU access)
+      CpuPeriod: config.cpuPeriod, // CPU period in microseconds
+      CpuQuota: config.cpuQuota, // CPU quota in microseconds per period
+      PidsLimit: config.pidsLimit, // Max processes (prevents fork bombs)
+
+      // Network isolation
+      NetworkMode: config.network,
+
+      // Port bindings
+      PortBindings: Object.keys(portBindings).length > 0 ? portBindings : undefined,
+
+      // Volume mounts
+      Binds: mounts.map(
+        (m) => `${m.hostPath}:${m.containerPath}:${m.mode}`
+      ),
+
+      // Tmpfs mounts
+      Tmpfs: Object.keys(tmpfsMounts).length > 0 ? tmpfsMounts : undefined,
+
+      // Security hardening
+      SecurityOpt: ["no-new-privileges:true"],
+      CapDrop: ["ALL"],
+      ReadonlyRootfs: false, // Claude needs to write temp files
+
+      // Cleanup
+      AutoRemove: config.ephemeral,
+    };
+
+    // Merge with hostConfigOverride - override values take precedence
+    const finalHostConfig: HostConfig = config.hostConfigOverride
+      ? { ...translatedHostConfig, ...config.hostConfigOverride }
+      : translatedHostConfig;
+
     const createOptions: ContainerCreateOptions = {
       Image: config.image,
       name: containerName,
@@ -96,28 +149,13 @@ export class ContainerManager {
 
       Env: env,
 
-      HostConfig: {
-        // Resource limits
-        Memory: config.memoryBytes,
-        MemorySwap: config.memoryBytes, // Same as Memory = no swap
-        CpuShares: config.cpuShares, // undefined = no limit (full CPU access)
+      // Exposed ports (required for port bindings)
+      ExposedPorts: Object.keys(exposedPorts).length > 0 ? exposedPorts : undefined,
 
-        // Network isolation
-        NetworkMode: config.network,
+      // Container labels
+      Labels: Object.keys(config.labels).length > 0 ? config.labels : undefined,
 
-        // Volume mounts
-        Binds: mounts.map(
-          (m) => `${m.hostPath}:${m.containerPath}:${m.mode}`
-        ),
-
-        // Security hardening
-        SecurityOpt: ["no-new-privileges:true"],
-        CapDrop: ["ALL"],
-        ReadonlyRootfs: false, // Claude needs to write temp files
-
-        // Cleanup
-        AutoRemove: config.ephemeral,
-      },
+      HostConfig: finalHostConfig,
 
       // Non-root user
       User: config.user,
