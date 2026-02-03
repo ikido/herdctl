@@ -114,15 +114,19 @@ export class ContainerRunner implements RuntimeInterface {
         message: `Docker execution failed: ${errorMessage}`,
       } as SDKMessage;
 
-      // If container startup failed, try to clean up
+      // Container cleanup happens in finally block
+    } finally {
+      // For ephemeral containers, stop immediately after execution
+      // This triggers AutoRemove so the container is cleaned up automatically
       if (this.config.ephemeral) {
         try {
           await this.manager.stopContainer(container);
-        } catch {
-          // Ignore cleanup errors
+        } catch (stopError) {
+          // Log but don't fail - container might already be stopped
+          console.error('[ContainerRunner] Failed to stop ephemeral container:', stopError);
         }
       }
-    } finally {
+
       // Always cleanup old containers, regardless of success/failure
       // This prevents container accumulation from failed executions
       try {
