@@ -247,6 +247,31 @@ describeDocker("Docker Security Hardening", () => {
         process.env.ANTHROPIC_API_KEY = originalKey;
       }
     });
+
+    it("includes custom env vars from docker config", () => {
+      const agent = createTestAgent();
+      const dockerConfig = resolveDockerConfig({
+        enabled: true,
+        env: {
+          GITHUB_TOKEN: "ghp_test123",
+          CUSTOM_VAR: "custom_value",
+        },
+      });
+
+      const env = buildContainerEnv(agent, dockerConfig);
+
+      expect(env).toContain("GITHUB_TOKEN=ghp_test123");
+      expect(env).toContain("CUSTOM_VAR=custom_value");
+    });
+
+    it("works without docker config (backwards compatible)", () => {
+      const agent = createTestAgent();
+      const env = buildContainerEnv(agent);
+
+      // Should still include basic env vars
+      expect(env).toContain("HOME=/home/claude");
+      expect(env.find((e) => e.startsWith("TERM="))).toBeDefined();
+    });
   });
 
   describe("Container Configuration", () => {

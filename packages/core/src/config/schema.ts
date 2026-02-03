@@ -205,6 +205,9 @@ export const DockerSchema = z
     /** Workspace mount mode: rw (read-write, default) or ro (read-only) */
     workspace_mode: z.enum(["rw", "ro"]).optional().default("rw"),
 
+    /** Environment variables to pass to the container (supports ${VAR} interpolation) */
+    env: z.record(z.string(), z.string()).optional(),
+
     /** @deprecated Use 'image' instead */
     base_image: z.string().optional(),
   })

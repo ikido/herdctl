@@ -53,6 +53,8 @@ export interface DockerConfig {
   volumes: PathMapping[];
   /** Workspace mount mode */
   workspaceMode: VolumeMode;
+  /** Environment variables to pass to the container */
+  env: Record<string, string>;
 }
 
 /**
@@ -163,5 +165,6 @@ export function resolveDockerConfig(docker?: DockerInput): DockerConfig {
     maxContainers: docker?.max_containers ?? DEFAULT_MAX_CONTAINERS,
     volumes: docker?.volumes?.map(parseVolumeMount) ?? [],
     workspaceMode: docker?.workspace_mode ?? "rw",
+    env: docker?.env ?? {},
   };
 }

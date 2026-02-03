@@ -341,6 +341,26 @@ docker:
 
 **Security benefit:** Container cannot modify credentials (read-only environment variables).
 
+### GitHub Access in Docker Containers
+
+To allow Docker-isolated agents to push code to GitHub, pass your `GITHUB_TOKEN` via the `env` config:
+
+```yaml
+docker:
+  enabled: true
+  env:
+    GITHUB_TOKEN: ${GITHUB_TOKEN}
+```
+
+The default Docker image includes both `git` and the `gh` CLI, so agents can:
+- Push commits via HTTPS using the token
+- Create pull requests with `gh pr create`
+- Manage issues, releases, and other GitHub operations
+
+<Aside type="tip">
+  Store `GITHUB_TOKEN` in your `.env` file alongside `ANTHROPIC_API_KEY`. Use a [fine-grained personal access token](https://github.com/settings/tokens?type=beta) with minimal scopes (e.g., only the specific repositories the agent needs).
+</Aside>
+
 ### Credential Rotation
 
 1. **Rotate API keys regularly** — Especially after agent experiments

@@ -258,9 +258,13 @@ export function buildContainerMounts(
  * Build environment variables for container
  *
  * @param agent - Resolved agent configuration
+ * @param config - Docker configuration (for custom env vars)
  * @returns Array of "KEY=value" strings
  */
-export function buildContainerEnv(agent: ResolvedAgent): string[] {
+export function buildContainerEnv(
+  agent: ResolvedAgent,
+  config?: DockerConfig
+): string[] {
   const env: string[] = [];
 
   // Pass through API key if available (preferred over mounted auth)
@@ -271,6 +275,13 @@ export function buildContainerEnv(agent: ResolvedAgent): string[] {
   // Pass through OAuth token if available (for Claude Max web authentication)
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
     env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
+  }
+
+  // Add custom environment variables from docker config
+  if (config?.env) {
+    for (const [key, value] of Object.entries(config.env)) {
+      env.push(`${key}=${value}`);
+    }
   }
 
   // Terminal support
