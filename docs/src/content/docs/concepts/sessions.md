@@ -375,10 +375,8 @@ Session storage location varies by runtime and execution environment:
 
 | Runtime | Environment | Storage Location | Notes |
 |---------|-------------|------------------|-------|
-| **SDK** | Local | `.herdctl/sessions/` | herdctl manages session metadata |
-| **CLI** | Local | `~/.claude/projects/` | Claude CLI manages sessions |
-| **SDK** | Docker | `.herdctl/docker-sessions/` | Isolated from local sessions |
-| **CLI** | Docker | `.herdctl/docker-sessions/` | Isolated from local sessions |
+| **Both** | Local | `~/.claude/projects/` | Claude stores sessions; herdctl tracks metadata in `.herdctl/sessions/` |
+| **Both** | Docker | `.herdctl/docker-sessions/` | Isolated from local sessions |
 
 **Key behaviors:**
 - **Local SDK ↔ CLI**: Sessions compatible (both use Claude Code session system)
