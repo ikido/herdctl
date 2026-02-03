@@ -44,10 +44,10 @@ Running agents in Docker containers provides the strongest security isolation av
 
 ### Quick Start: Enable Docker Isolation
 
-To enable Docker, just add:
+To enable Docker, add to your agent config:
 
 ```yaml
-# herdctl.yaml
+# herdctl-agent.yaml
 docker:
   enabled: true
 ```
@@ -63,6 +63,31 @@ That's it! The secure defaults are already configured:
 | `user` | Auto-detected | Matches your host UID:GID |
 
 **See [Docker Configuration](/configuration/docker/) for complete reference.**
+
+### Tiered Configuration Security
+
+<Aside type="tip">
+  Docker options are split into two tiers: **safe options** (allowed in agent config) and **dangerous options** (fleet config only).
+</Aside>
+
+**Why?** Agent config files live in the agent's working directory. If an agent could modify its own config to add `network: host` or mount sensitive volumes, it could escape isolation.
+
+**Safe options** (agent-level): `enabled`, `ephemeral`, `memory`, `cpu_shares`, `cpu_period`, `cpu_quota`, `max_containers`, `workspace_mode`, `tmpfs`, `pids_limit`, `labels`
+
+**Dangerous options** (fleet-level only): `image`, `network`, `volumes`, `user`, `ports`, `env`, `host_config`
+
+To grant dangerous capabilities to specific agents, use per-agent overrides in your fleet config:
+
+```yaml
+# herdctl.yaml
+agents:
+  - path: ./agents/trusted-agent.yaml
+    overrides:
+      docker:
+        network: host
+        env:
+          SPECIAL_TOKEN: "${SPECIAL_TOKEN}"
+```
 
 ### Security Hardening Measures
 
@@ -147,42 +172,74 @@ registry.npmjs.org
 
 #### Maximum Security (Untrusted Prompts)
 
+Agent config (safe options only):
 ```yaml
+# herdctl-agent.yaml
 docker:
   enabled: true
-  network: bridge            # Via Squid proxy (see above)
   workspace_mode: ro         # Read-only workspace
   memory: "1g"              # Limited resources
   cpu_shares: 512           # Lower priority
+  pids_limit: 50            # Limit processes
   ephemeral: true           # Fresh container per job
+```
+
+Fleet config (dangerous options):
+```yaml
+# herdctl.yaml
+defaults:
+  docker:
+    network: bridge         # Via Squid proxy (see above)
 ```
 
 **Use for:** Untrusted prompts, experimental agents, security-critical environments
 
 #### Balanced Security (Production Agents)
 
+Agent config:
 ```yaml
+# herdctl-agent.yaml
 docker:
   enabled: true
-  network: bridge           # Standard isolation
   workspace_mode: rw        # Read-write access
   memory: "2g"
   ephemeral: false          # Reuse containers for speed
   max_containers: 5
 ```
 
+Fleet config:
+```yaml
+# herdctl.yaml
+defaults:
+  docker:
+    network: bridge         # Standard isolation
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+```
+
 **Use for:** Trusted production agents, standard workloads
 
 #### Development (Trusted Only)
 
+Agent config:
 ```yaml
+# herdctl-agent.yaml
 docker:
   enabled: true
-  network: host             # Share host network
   workspace_mode: rw
   memory: "4g"
   ephemeral: false
   max_containers: 10
+```
+
+Fleet config with per-agent override:
+```yaml
+# herdctl.yaml
+agents:
+  - path: ./agents/dev-agent.yaml
+    overrides:
+      docker:
+        network: host       # Share host network (fleet-level only)
 ```
 
 **Use for:** Local development, debugging, trusted agents only
@@ -191,7 +248,9 @@ docker:
 
 A common use case is running agents that manage local infrastructure—SSH into servers, configure services, manage VMs. For example, a "homelab" agent that manages Proxmox servers:
 
+Agent config:
 ```yaml
+# ./agents/homelab.yaml
 name: homelab
 prompt: "Manage my Proxmox cluster. Check VM status, optimize resources, and alert me to issues."
 schedule:
@@ -199,9 +258,18 @@ schedule:
 
 docker:
   enabled: true
-  network: host             # Required for SSH to local machines
   workspace_mode: rw
   memory: "2g"
+```
+
+Fleet config (network: host requires fleet-level):
+```yaml
+# herdctl.yaml
+agents:
+  - path: ./agents/homelab.yaml
+    overrides:
+      docker:
+        network: host       # Required for SSH to local machines
 ```
 
 **Why `network: host` is required:**
@@ -343,13 +411,22 @@ docker:
 
 ### GitHub Access in Docker Containers
 
-To allow Docker-isolated agents to push code to GitHub, pass your `GITHUB_TOKEN` via the `env` config:
+To allow Docker-isolated agents to push code to GitHub, pass your `GITHUB_TOKEN` via the fleet config (since `env` is a fleet-level option):
 
 ```yaml
-docker:
-  enabled: true
-  env:
-    GITHUB_TOKEN: ${GITHUB_TOKEN}
+# herdctl.yaml (fleet config)
+defaults:
+  docker:
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+# Or for specific agents only:
+agents:
+  - path: ./agents/coder.yaml
+    overrides:
+      docker:
+        env:
+          GITHUB_TOKEN: "${GITHUB_TOKEN}"
 ```
 
 The default Docker image includes both `git` and the `gh` CLI, so agents can:
@@ -359,6 +436,10 @@ The default Docker image includes both `git` and the `gh` CLI, so agents can:
 
 <Aside type="tip">
   Store `GITHUB_TOKEN` in your `.env` file alongside `ANTHROPIC_API_KEY`. Use a [fine-grained personal access token](https://github.com/settings/tokens?type=beta) with minimal scopes (e.g., only the specific repositories the agent needs).
+</Aside>
+
+<Aside type="note">
+  The `env` option is restricted to fleet config because environment variables could be used to inject credentials or modify agent behavior. This is part of the [tiered security model](#tiered-configuration-security).
 </Aside>
 
 ### Credential Rotation

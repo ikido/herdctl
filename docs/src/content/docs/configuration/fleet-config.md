@@ -406,15 +406,12 @@ workspace:
 
 List of agent configuration file references.
 
-Each agent reference is an object with a `path` field:
+#### Agent Reference Fields
 
-| Property | Value |
-|----------|-------|
-| **Type** | `string` |
-| **Default** | N/A |
-| **Required** | **Yes** |
-
-Path to the agent configuration file. Can be relative (to the fleet config file) or absolute.
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | **Yes** | Path to agent config file (relative or absolute) |
+| `overrides` | object | No | Per-agent configuration overrides |
 
 ```yaml
 agents:
@@ -422,6 +419,61 @@ agents:
   - path: ./agents/reviewer.yaml
   - path: /etc/herdctl/agents/shared-agent.yaml
 ```
+
+#### Agent Overrides
+
+Use `overrides` to customize specific agents without modifying their config files. Overrides are deep-merged with the agent config after fleet defaults are applied.
+
+```yaml
+agents:
+  - path: ./agents/standard-agent.yaml
+    # No overrides - uses fleet defaults
+
+  - path: ./agents/trusted-agent.yaml
+    overrides:
+      docker:
+        network: host           # Grant host network access
+        env:
+          SPECIAL_TOKEN: "${SPECIAL_TOKEN}"
+
+  - path: ./agents/high-resource-agent.yaml
+    overrides:
+      session:
+        max_turns: 200
+      docker:
+        memory: "8g"
+```
+
+**Common override use cases:**
+
+1. **Grant dangerous Docker options to specific agents:**
+   ```yaml
+   overrides:
+     docker:
+       network: host
+       volumes:
+         - "/data:/data:ro"
+       env:
+         GITHUB_TOKEN: "${GITHUB_TOKEN}"
+   ```
+
+2. **Override session settings:**
+   ```yaml
+   overrides:
+     session:
+       max_turns: 500
+       timeout: 8h
+   ```
+
+3. **Override model:**
+   ```yaml
+   overrides:
+     model: claude-opus-4-20250514
+   ```
+
+:::tip[Tiered Security]
+Per-agent overrides are the recommended way to grant [fleet-level Docker options](/configuration/docker/#tiered-security-model) to specific agents while keeping other agents restricted.
+:::
 
 ---
 
@@ -488,33 +540,69 @@ webhooks:
 | **Default** | `undefined` |
 | **Required** | No |
 
-Global Docker runtime configuration.
+Global Docker runtime configuration. Fleet config has access to **all** Docker options, including dangerous ones restricted from agent config.
 
-#### docker.enabled
+:::note[Tiered Security Model]
+Fleet config can set dangerous options like `network`, `volumes`, `env`, `image`, `user`, and `ports`. These are restricted from agent config because agents can modify their own config files. See [Docker Configuration](/configuration/docker/#tiered-security-model).
+:::
 
-| Property | Value |
-|----------|-------|
-| **Type** | `boolean` |
-| **Default** | `false` |
-| **Required** | No |
+#### Safe Options (also available in agent config)
 
-Enable Docker container runtime for agent execution.
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable Docker execution |
+| `ephemeral` | boolean | `true` | Fresh container per job |
+| `memory` | string | `2g` | Memory limit |
+| `cpu_shares` | integer | — | CPU relative weight |
+| `cpu_period` | integer | — | CPU CFS period |
+| `cpu_quota` | integer | — | CPU CFS quota |
+| `max_containers` | integer | `5` | Container pool limit |
+| `workspace_mode` | string | `rw` | Workspace mount mode |
+| `tmpfs` | string[] | — | Tmpfs mounts |
+| `pids_limit` | integer | — | Max processes |
+| `labels` | object | — | Container labels |
 
-#### docker.base_image
+#### Dangerous Options (fleet-level only)
 
-| Property | Value |
-|----------|-------|
-| **Type** | `string` |
-| **Default** | `undefined` |
-| **Required** | No |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `image` | string | `herdctl/runtime:latest` | Docker image |
+| `network` | string | `bridge` | Network mode: `none`, `bridge`, `host` |
+| `user` | string | Host UID:GID | Container user |
+| `volumes` | string[] | `[]` | Additional volume mounts |
+| `ports` | string[] | — | Port bindings |
+| `env` | object | — | Environment variables |
+| `host_config` | object | — | Raw dockerode HostConfig passthrough |
 
-Base Docker image for agent containers.
+#### Example
 
 ```yaml
-docker:
-  enabled: true
-  base_image: node:20-alpine
+defaults:
+  docker:
+    enabled: true
+    image: "herdctl/runtime:latest"
+    network: bridge
+    memory: "2g"
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+    volumes:
+      - "/data/models:/models:ro"
 ```
+
+#### Advanced: host_config Passthrough
+
+For dockerode options not in our schema:
+
+```yaml
+defaults:
+  docker:
+    enabled: true
+    host_config:
+      ShmSize: 67108864      # 64MB shared memory
+      Privileged: true       # Use with extreme caution!
+```
+
+Values in `host_config` override translated options. See [dockerode HostConfig](https://github.com/apocas/dockerode) for available options.
 
 ---
 
@@ -534,7 +622,10 @@ defaults:
   max_turns: 50
   permission_mode: acceptEdits
   docker:
-    enabled: false
+    enabled: true
+    network: bridge           # Fleet-level: set network for all agents
+    env:                      # Fleet-level: pass credentials to all agents
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
   permissions:
     mode: acceptEdits
     allowed_tools:
@@ -573,8 +664,17 @@ workspace:
 
 agents:
   - path: ./agents/coder.yaml
+    # Uses fleet defaults
+
   - path: ./agents/reviewer.yaml
-  - path: ./agents/docs-writer.yaml
+    # Uses fleet defaults
+
+  - path: ./agents/homelab.yaml
+    overrides:
+      docker:
+        network: host         # This agent needs host network for SSH
+        env:
+          SSH_AUTH_SOCK: "${SSH_AUTH_SOCK}"
 
 # Note: Chat (Discord/Slack) is configured per-agent, not here.
 # See agent config files for chat integration settings.
@@ -583,10 +683,6 @@ webhooks:
   enabled: true
   port: 8081
   secret_env: GITHUB_WEBHOOK_SECRET
-
-docker:
-  enabled: true
-  base_image: node:20-alpine
 ```
 
 ## Validation

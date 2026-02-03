@@ -103,11 +103,10 @@ description: Reviews PRs and suggests improvements
 # Use CLI runtime to use Claude Max subscription instead of API
 runtime: cli
 
-# Run in Docker for security isolation
+# Run in Docker for security isolation (safe options only at agent level)
 docker:
   enabled: true
-  env:
-    GITHUB_TOKEN: "${GITHUB_TOKEN}"
+  memory: "2g"
 
 # Point to an existing Claude Code project with skills/sub-agents
 working_directory: /path/to/my/project
@@ -139,6 +138,18 @@ permissions:
     allowed_commands:
       - git
       - gh
+```
+
+Sensitive Docker options like `env` must be configured at fleet level (see [tiered security model](/configuration/docker/#tiered-security-model)):
+
+```yaml
+# herdctl.yaml (fleet config)
+agents:
+  - path: ./agents/code-reviewer/herdctl-agent.yaml
+    overrides:
+      docker:
+        env:
+          GITHUB_TOKEN: "${GITHUB_TOKEN}"
 ```
 
 Because `working_directory` points to your existing Claude Code project, any CLAUDE.md files, skills, sub-agents, and MCP server configs you have there are automatically available to the agent.

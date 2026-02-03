@@ -271,12 +271,23 @@ Enabling or disabling Docker will start a fresh session. Docker sessions are iso
 Both runtimes work with Docker containerization. Enable Docker in your agent config:
 
 ```yaml
+# herdctl-agent.yaml (agent config - safe options only)
 name: containerized-agent
 runtime: cli  # or sdk (default)
 docker:
   enabled: true
-  network: bridge
   memory: 2g
+```
+
+Dangerous options like `network`, `volumes`, and `env` must be set at fleet level:
+
+```yaml
+# herdctl.yaml (fleet config)
+defaults:
+  docker:
+    network: bridge
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
 ```
 
 **Key Docker behaviors:**
@@ -285,7 +296,7 @@ docker:
 - Runtime switching within Docker preserves sessions
 - Switching between Docker and local starts fresh sessions
 
-See [Docker Configuration](/configuration/docker/) for complete Docker options, security model, and best practices.
+See [Docker Configuration](/configuration/docker/) for complete Docker options, [tiered security model](/configuration/docker/#tiered-security-model), and best practices.
 
 ## Troubleshooting
 

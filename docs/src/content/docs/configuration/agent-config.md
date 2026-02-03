@@ -593,30 +593,41 @@ Each chat-enabled agent needs its own Discord Application (created in [Discord D
 
 Run the agent in a Docker container for security isolation.
 
+:::note[Tiered Security Model]
+Agent config only allows **safe** Docker options. Dangerous options like `network`, `volumes`, `env`, `image`, `user`, and `ports` must be configured at fleet level. See [Docker Configuration](/configuration/docker/#tiered-security-model) for details.
+:::
+
 ```yaml
 docker:
   enabled: true
-  image: "anthropic/claude-code:latest"
-  network: bridge
   memory: "2g"
-  user: "1000:1000"
+  cpu_shares: 1024
   workspace_mode: rw
-  volumes:
-    - "/data/models:/models:ro"
+  ephemeral: true
+  max_containers: 5
+  tmpfs:
+    - "/tmp"
+  pids_limit: 100
+  labels:
+    team: backend
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | `false` | Enable Docker execution |
-| `image` | string | `anthropic/claude-code:latest` | Docker image |
-| `network` | string | `bridge` | Network mode: `none`, `bridge`, `host` |
-| `memory` | string | `2g` | Memory limit |
-| `cpu_shares` | integer | — | CPU relative weight |
-| `user` | string | Host UID:GID | Container user |
-| `workspace_mode` | string | `rw` | Workspace mount: `rw` or `ro` |
-| `volumes` | array | `[]` | Additional volume mounts |
 | `ephemeral` | boolean | `true` | Fresh container per job |
+| `memory` | string | `2g` | Memory limit |
+| `cpu_shares` | integer | — | CPU relative weight (soft limit) |
+| `cpu_period` | integer | — | CPU CFS period in microseconds |
+| `cpu_quota` | integer | — | CPU CFS quota in microseconds |
 | `max_containers` | integer | `5` | Container pool limit |
+| `workspace_mode` | string | `rw` | Workspace mount: `rw` or `ro` |
+| `tmpfs` | string[] | — | Tmpfs mounts for in-memory temp storage |
+| `pids_limit` | integer | — | Maximum processes (prevents fork bombs) |
+| `labels` | object | — | Container labels for organization |
+
+**Fleet-level only options** (use [per-agent overrides](/configuration/fleet-config/#agent-overrides)):
+`image`, `network`, `volumes`, `user`, `ports`, `env`, `host_config`
 
 See [Docker Configuration](/configuration/docker/) for security model and detailed options.
 

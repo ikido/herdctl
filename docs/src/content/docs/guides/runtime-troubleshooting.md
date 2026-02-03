@@ -131,11 +131,12 @@ id
 # Example output: uid=1000(username) gid=1000(username)
 ```
 
-Update agent config to match:
+Update **fleet config** to match (since `user` is a fleet-level option):
 ```yaml
-docker:
-  enabled: true
-  user: "1000:1000"  # Match your host UID:GID
+# herdctl.yaml
+defaults:
+  docker:
+    user: "1000:1000"  # Match your host UID:GID
 ```
 
 **Why this matters:**
@@ -144,17 +145,22 @@ docker:
 - Mismatch causes "permission denied" errors
 - Default tries to match host user automatically
 
+:::note[Tiered Security]
+The `user` option is restricted to fleet config. See [Docker tiered security model](/configuration/docker/#tiered-security-model).
+:::
+
 ### Network issues (can't reach APIs)
 
 **Cause:** Wrong network mode configured.
 
 **Solution:**
 
-Use `bridge` mode for network access:
+Use `bridge` mode for network access (configured at **fleet level**):
 ```yaml
-docker:
-  enabled: true
-  network: bridge  # Use 'bridge' (default) for network access
+# herdctl.yaml
+defaults:
+  docker:
+    network: bridge  # Use 'bridge' (default) for network access
 ```
 
 **Network mode comparison:**
@@ -167,6 +173,10 @@ docker:
 - npm/pip/cargo package installation
 - External API calls
 - Git operations (clone, push, pull)
+
+:::note[Tiered Security]
+The `network` option is restricted to fleet config. Agents cannot change their own network mode. See [Docker tiered security model](/configuration/docker/#tiered-security-model).
+:::
 
 ### Container out of memory
 
@@ -325,17 +335,18 @@ docker:
 ### Network isolation with API agents
 
 ```yaml
-# BAD - No network but agent needs APIs
-docker:
-  enabled: true
-  network: none  # Agent can't reach GitHub, npm, etc.
-  runtime: cli   # CLI needs network for authentication!
+# BAD - No network but agent needs APIs (fleet config)
+defaults:
+  docker:
+    network: none  # Agent can't reach GitHub, npm, etc.
 
-# GOOD - Bridge for network access
-docker:
-  enabled: true
-  network: bridge  # Default - full network access
+# GOOD - Bridge for network access (fleet config)
+defaults:
+  docker:
+    network: bridge  # Default - full network access
 ```
+
+Note: `network` is a fleet-level option and cannot be set in agent config.
 
 ### Read-only workspace for coding agents
 
@@ -368,16 +379,18 @@ docker:
 ### Running as root in production
 
 ```yaml
-# BAD - Security risk
-docker:
-  enabled: true
-  user: "0:0"  # Running as root!
+# BAD - Security risk (fleet config)
+defaults:
+  docker:
+    user: "0:0"  # Running as root!
 
-# GOOD - Non-root user
-docker:
-  enabled: true
-  user: "1000:1000"  # Match host user (default)
+# GOOD - Non-root user (fleet config)
+defaults:
+  docker:
+    user: "1000:1000"  # Match host user (default)
 ```
+
+Note: `user` is a fleet-level option. Agents cannot configure their own user (which is good for security).
 
 ### Persisting containers in production
 
