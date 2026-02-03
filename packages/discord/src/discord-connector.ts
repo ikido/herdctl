@@ -691,14 +691,12 @@ export class DiscordConnector
       let typingInterval: ReturnType<typeof setInterval> | null = null;
 
       // Send initial typing indicator
-      this._logger.debug("[TYPING] Sending initial typing indicator", { channelId: channel.id });
       textChannel.sendTyping().catch((err) => {
         this._logger.debug("Failed to send typing indicator", { error: err.message });
       });
 
       // Refresh typing every 8 seconds (indicator lasts ~10 seconds)
       typingInterval = setInterval(() => {
-        this._logger.debug("[TYPING] Interval fired - sending typing refresh", { channelId: channel.id });
         textChannel.sendTyping().catch((err) => {
           this._logger.debug("Failed to refresh typing indicator", { error: err.message });
         });
@@ -706,11 +704,9 @@ export class DiscordConnector
 
       // Return stop function
       return () => {
-        this._logger.debug("[TYPING] Stop function called - clearing interval", { channelId: channel.id, hadInterval: !!typingInterval });
         if (typingInterval) {
           clearInterval(typingInterval);
           typingInterval = null;
-          this._logger.debug("[TYPING] Interval cleared", { channelId: channel.id });
         }
       };
     };
