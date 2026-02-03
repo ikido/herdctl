@@ -684,6 +684,10 @@ export class DiscordManager {
         },
       });
 
+      // Stop typing indicator immediately after SDK execution completes
+      // This prevents the interval from sending another typing indicator while we flush/send messages
+      stopTyping();
+
       // Flush any remaining buffered content
       await streamer.flush();
 
@@ -699,10 +703,6 @@ export class DiscordManager {
           await event.reply(`❌ **Error:** ${errorMessage}\n\nThe task could not be completed. Please check the logs for more details.`);
         }
       }
-
-      // Stop typing indicator now that all messages have been sent
-      // This prevents showing typing during session storage and event emission
-      stopTyping();
 
       // Store the SDK session ID for future conversation continuity
       // Only store if the job succeeded - failed jobs may return invalid session IDs
