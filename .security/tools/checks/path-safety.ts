@@ -32,7 +32,7 @@ function checkPathJoinPatterns(projectRoot: string): Finding[] {
   });
 
   // Files that handle user input (config, state)
-  const sensitivePatterns = ["state/directory", "state/job"];
+  const sensitivePatterns = ["state/directory", "state/job", "state/session"];
 
   for (const match of pathJoins) {
     if (shouldSkipFile(match.file)) continue;
@@ -57,9 +57,10 @@ function checkPathJoinPatterns(projectRoot: string): Finding[] {
       // Check for potential user-controlled input
       if (
         context.includes("agentId") ||
+        context.includes("agentName") ||
         context.includes("jobId")
       ) {
-        // Check if there's validation nearby
+        // Check if there's validation nearby or if buildSafeFilePath is used
         const hasValidation =
           context.includes("validate") ||
           context.includes("sanitize") ||
@@ -67,7 +68,10 @@ function checkPathJoinPatterns(projectRoot: string): Finding[] {
           context.includes("path.resolve") ||
           context.includes("includes('..')") ||
           context.includes("startsWith(") ||
-          context.includes("isValidId");
+          context.includes("isValidId") ||
+          context.includes("isValidIdentifier") ||
+          context.includes("buildSafeFilePath") ||
+          content.includes("buildSafeFilePath"); // Also check full file
 
         if (!hasValidation) {
           findings.push({
@@ -76,7 +80,7 @@ function checkPathJoinPatterns(projectRoot: string): Finding[] {
             description:
               "path.join with potentially user-controlled ID - verify validation",
             recommendation:
-              "Ensure IDs are validated before use in paths (no '..' or absolute paths)",
+              "Use buildSafeFilePath or ensure IDs are validated before use in paths",
           });
         }
       }
@@ -89,32 +93,54 @@ function checkPathJoinPatterns(projectRoot: string): Finding[] {
 function checkPathValidation(projectRoot: string): Finding[] {
   const findings: Finding[] = [];
 
-  // Check state/directory.ts specifically since it's critical
-  const directoryFile = `${projectRoot}/packages/core/src/state/directory.ts`;
-  if (existsSync(directoryFile)) {
-    const content = readFileSync(directoryFile, "utf-8");
+  // Check for path-safety.ts utility (defense-in-depth for path traversal)
+  const pathSafetyFile = `${projectRoot}/packages/core/src/state/utils/path-safety.ts`;
+  if (!existsSync(pathSafetyFile)) {
+    findings.push({
+      severity: "high",
+      location: "packages/core/src/state/utils/",
+      description: "Path safety utility not found",
+      recommendation:
+        "Implement buildSafeFilePath utility to prevent path traversal attacks",
+    });
+  } else {
+    // Verify it has the expected protection mechanisms
+    const content = readFileSync(pathSafetyFile, "utf-8");
 
-    // Check for path traversal protection
-    const hasTraversalCheck =
-      (content.includes("..") &&
-        (content.includes("includes") ||
-          content.includes("indexOf") ||
-          content.includes("startsWith"))) ||
-      content.includes("isValidId") ||
-      content.includes("validateId");
+    const hasPatternValidation = content.includes("SAFE_IDENTIFIER_PATTERN") ||
+                                  content.includes("isValidIdentifier");
+    const hasPathVerification = content.includes("startsWith") &&
+                                 content.includes("resolve");
+    const hasPathTraversalError = content.includes("PathTraversalError");
 
-    const hasNormalization =
-      content.includes("path.resolve") || content.includes("path.normalize");
-
-    if (!hasTraversalCheck && !hasNormalization) {
+    if (!hasPatternValidation || !hasPathVerification || !hasPathTraversalError) {
       findings.push({
-        severity: "high",
-        location: "packages/core/src/state/directory.ts",
-        description:
-          "State directory may lack path traversal protection",
+        severity: "medium",
+        location: "packages/core/src/state/utils/path-safety.ts",
+        description: "Path safety utility may be incomplete",
         recommendation:
-          "Add validation to prevent '../' in agent/job IDs and normalize paths",
+          "Ensure path-safety.ts has identifier validation, path verification, and proper error handling",
       });
+    }
+  }
+
+  // Check if session.ts and job-metadata.ts use the safe path utility
+  const sessionFile = `${projectRoot}/packages/core/src/state/session.ts`;
+  const jobMetadataFile = `${projectRoot}/packages/core/src/state/job-metadata.ts`;
+
+  for (const file of [sessionFile, jobMetadataFile]) {
+    if (existsSync(file)) {
+      const content = readFileSync(file, "utf-8");
+      if (!content.includes("buildSafeFilePath")) {
+        const fileName = file.split("/").pop();
+        findings.push({
+          severity: "high",
+          location: `packages/core/src/state/${fileName}`,
+          description: `${fileName} does not use buildSafeFilePath for path construction`,
+          recommendation:
+            "Use buildSafeFilePath from path-safety.ts for defense-in-depth",
+        });
+      }
     }
   }
 

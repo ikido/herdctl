@@ -6,9 +6,10 @@
  */
 
 import { readdir } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { join } from "node:path";
 import { atomicWriteYaml } from "./utils/atomic.js";
 import { safeReadYaml } from "./utils/reads.js";
+import { buildSafeFilePath } from "./utils/path-safety.js";
 import {
   JobMetadataSchema,
   createJobMetadata,
@@ -75,9 +76,13 @@ export interface ListJobsResult {
 
 /**
  * Get the file path for a job
+ *
+ * Uses buildSafeFilePath for defense-in-depth against path traversal attacks.
+ * Job IDs are also validated at the schema level with a strict regex pattern,
+ * but this provides an additional safety check at the point of file path construction.
  */
 function getJobFilePath(jobsDir: string, jobId: string): string {
-  return join(jobsDir, `${jobId}.yaml`);
+  return buildSafeFilePath(jobsDir, jobId, ".yaml");
 }
 
 /**

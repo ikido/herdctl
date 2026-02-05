@@ -707,9 +707,19 @@ export const AgentWorkingDirectorySchema = z.union([
 // Agent Configuration Schema
 // =============================================================================
 
+/**
+ * Regex for valid agent names - alphanumeric with underscores and hyphens.
+ * Must start with alphanumeric character.
+ * This prevents path traversal attacks (../) when names are used in file paths.
+ */
+export const AGENT_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
+
 export const AgentConfigSchema = z
   .object({
-    name: z.string(),
+    name: z.string().regex(AGENT_NAME_PATTERN, {
+      message:
+        "Agent name must start with a letter or number and contain only letters, numbers, underscores, and hyphens",
+    }),
     description: z.string().optional(),
     working_directory: AgentWorkingDirectorySchema.optional(),
     repo: z.string().optional(),
