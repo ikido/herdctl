@@ -43,3 +43,5 @@ coverage/
 agent-distribution.md
 docker.md
 docs/MANUAL-QA-TEST-PLAN.md.planning/
+
+.planning/phases
