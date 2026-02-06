@@ -15,9 +15,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: State Infrastructure** - Persistent STATE.md for audit memory and session continuity
 - [x] **Phase 2: Mapper Agent Definitions** - Four parallel security mapper agents
 - [x] **Phase 3: Mapping Orchestrator** - /security-map-codebase command with output handling
-- [ ] **Phase 4: Hot-Spot Verifier** - Agent for critical file verification
-- [ ] **Phase 5: Question Investigator** - Agent for researching open questions
-- [ ] **Phase 6: Change Analyzer** - Agent for security-focused commit review
+- [x] **Phase 4: Hot-Spot Verifier** - Agent for critical file verification
+- [x] **Phase 5: Question Investigator** - Agent for researching open questions
+- [x] **Phase 6: Change Analyzer** - Agent for security-focused commit review
 - [ ] **Phase 7: Audit Orchestrator** - /security-audit command with subagent spawning
 - [ ] **Phase 8: Daily Automation** - /security-audit-daily meta-orchestrator with branch commits
 
@@ -79,7 +79,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 04-01-PLAN.md - Create hot-spot-verifier agent definition (verification-focused investigator)
+- [x] 04-01-PLAN.md - Create hot-spot-verifier agent definition (verification-focused investigator)
 
 ### Phase 5: Question Investigator
 **Goal**: Open security questions from CODEBASE-UNDERSTANDING.md can be systematically researched
@@ -90,10 +90,10 @@ Plans:
   2. Agent deeply researches assigned questions and returns findings with evidence
   3. /security-audit spawns question-investigator when open questions exist
   4. Agent recommends question status updates (Answered, Partial, Blocked)
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 05-01: TBD
+- [x] 05-01-PLAN.md - Create question-investigator agent definition (research-focused investigator)
 
 ### Phase 6: Change Analyzer
 **Goal**: Recent code changes can be automatically analyzed for security implications
@@ -104,10 +104,10 @@ Plans:
   2. Agent identifies security-relevant changes (hot spot touches, new entry points)
   3. /security-audit spawns change-analyzer when commits exist since last audit
   4. Agent returns security assessment with recommendations for investigation
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 06-01: TBD
+- [x] 06-01-PLAN.md - Create change-analyzer agent definition (git-change-focused investigator)
 
 ### Phase 7: Audit Orchestrator
 **Goal**: User can run /security-audit to perform comprehensive incremental audits with automatic subagent delegation
@@ -148,8 +148,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 1. State Infrastructure | 1/1 | Complete | 2026-02-05 |
 | 2. Mapper Agent Definitions | 2/2 | Complete | 2026-02-05 |
 | 3. Mapping Orchestrator | 1/1 | Complete | 2026-02-06 |
-| 4. Hot-Spot Verifier | 0/1 | Planned | - |
-| 5. Question Investigator | 0/? | Not started | - |
-| 6. Change Analyzer | 0/? | Not started | - |
+| 4. Hot-Spot Verifier | 1/1 | Complete | 2026-02-05 |
+| 5. Question Investigator | 1/1 | Complete | 2026-02-05 |
+| 6. Change Analyzer | 1/1 | Complete | 2026-02-05 |
 | 7. Audit Orchestrator | 0/? | Not started | - |
 | 8. Daily Automation | 0/? | Not started | - |
