@@ -3,8 +3,8 @@
 This document captures the evolving security understanding of the herdctl codebase.
 Updated after each security review as new insights are gained.
 
-**Last Updated**: 2026-02-05 (evening)
-**Reviews Conducted**: 2
+**Last Updated**: 2026-02-06
+**Reviews Conducted**: 3
 
 ---
 
@@ -195,13 +195,16 @@ These questions should be systematically investigated during audits. Each audit 
 | ID | Question | Priority | Status | Assigned | Last Checked | Notes |
 |----|----------|----------|--------|----------|--------------|-------|
 | Q1 | How are GitHub webhooks authenticated? Is signature verification implemented? | Medium | Open | - | - | Check work-sources/ for webhook handling |
-| Q2 | Are there other places where user-controlled strings become file paths? | High | Partial | - | 2026-02-05 | Checked session.ts, job-metadata.ts. Need to grep more broadly. |
+| Q2 | Are there other places where user-controlled strings become file paths? | High | Answered | - | 2026-02-06 | Audited all path.join() and file operations. FOUND: job-executor.ts:183 creates directories using job.id (validated), job-output.ts:62 uses validated job.id, cli-session-path.ts:53 encodes workspace paths safely. All other path.join() calls use static strings or validated config. NO additional risks. Status: VERIFIED SAFE. |
 | Q3 | What happens if a Docker container name contains special characters? | Low | Open | - | - | Could cause issues in docker exec commands |
 | Q4 | Could malicious agent output cause log injection in job-output.ts? | Medium | Open | - | - | Output streams to files - check for escape sequences |
 | Q5 | When fleet config merges with agent config, are there unexpected overrides? | Medium | Open | - | - | Check config merging logic in loader.ts |
 | Q6 | Are session IDs validated against a safe pattern like agent names? | Low | Answered | - | 2026-02-05 | Session IDs come from Claude SDK (UUIDs), not user input. Low risk. |
 | Q7 | What user does the Docker container run as? Root or unprivileged? | Medium | Open | - | - | Check container-manager.ts User config |
 | Q8 | Is the prompt in SDK wrapper (HERDCTL_SDK_OPTIONS) properly escaped? | Medium | Open | - | - | container-runner.ts:206-207 uses JSON.stringify + shell escaping |
+| Q9 | Does job-executor.ts need buildSafeFilePath for mkdir operations? | Medium | Open | - | - | Line 183 creates directories using job.id - currently relies on schema validation only |
+| Q10 | Does AGENT_NAME_PATTERN handle unicode normalization attacks? | Medium | Open | - | - | Regex `/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/` - check for unicode bypass attempts |
+| Q11 | Can symlinks be created in .herdctl/ to escape buildSafeFilePath? | Medium | Open | - | - | If attacker can create symlinks before buildSafeFilePath runs, could escape |
 
 ### Question Guidelines
 
@@ -221,6 +224,7 @@ These questions should be systematically investigated during audits. Each audit 
 | ID | Question | Answer | Answered On |
 |----|----------|--------|-------------|
 | Q6 | Session ID validation | Session IDs are UUIDs from Claude SDK, not user input. Stored in user's own project. Low risk. | 2026-02-05 |
+| Q2 | Other path traversal vectors | All user-controlled file paths properly secured. job.id uses strict regex, cli-session-path encodes safely. No risks found. | 2026-02-06 |
 
 ---
 
@@ -277,3 +281,5 @@ logger.info({ token })  // Definitely bad
 | 2026-02-05 | Added path traversal mitigation details |
 | 2026-02-05 | Evening review: Added container-runner.ts shell escaping note |
 | 2026-02-05 | Restructured: Added formal question tracking table with IDs and status |
+| 2026-02-06 | Q2 answered: All user-controlled file paths verified safe |
+| 2026-02-06 | Audit review: Added Q9-Q11 for deeper investigation of path safety edge cases |

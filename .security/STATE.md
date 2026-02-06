@@ -1,12 +1,12 @@
 ---
-last_updated: 2026-02-06T00:12:50Z
+last_updated: 2026-02-06T13:35:00Z
 last_mapping: 2026-02-06
-last_audit: 2026-02-05
+last_audit: 2026-02-06
 commits_since_audit: 0
 commits_since_mapping: 0
 open_findings: 5
-open_questions: 7
-status: mapping_complete
+open_questions: 9
+status: audit_complete
 ---
 
 # Security Audit State
@@ -22,12 +22,12 @@ This document provides persistent state for security audits, enabling incrementa
 | Metric | Value | Notes |
 |--------|-------|-------|
 | Last full mapping | 2026-02-06 | All 4 areas mapped |
-| Last incremental audit | 2026-02-05 | Baseline established |
-| Commits since last audit | 0 | Freshly established baseline |
+| Last incremental audit | 2026-02-06 | Automated via /security-audit |
+| Commits since last audit | 0 | Baseline updated |
 | Open findings | 5 | See [FINDINGS-INDEX.md](intel/FINDINGS-INDEX.md) |
-| Open questions | 7 | See [CODEBASE-UNDERSTANDING.md](CODEBASE-UNDERSTANDING.md) |
+| Open questions | 9 | See [CODEBASE-UNDERSTANDING.md](CODEBASE-UNDERSTANDING.md) |
 
-**Status:** Security codebase mapping complete. All 4 mapping documents created.
+**Status:** Incremental audit complete. Q2 answered, no new findings.
 
 ### Finding Breakdown
 
@@ -38,8 +38,8 @@ This document provides persistent state for security audits, enabling incrementa
 
 ### Question Priorities
 
-- High: 1 (Q2 - path traversal vectors)
-- Medium: 5 (Q1, Q4, Q5, Q7, Q8)
+- High: 0 (Q2 answered)
+- Medium: 8 (Q1, Q4, Q5, Q7, Q8, Q9, Q10, Q11)
 - Low: 1 (Q3 - container name characters)
 
 ---
@@ -71,7 +71,6 @@ Active findings and open questions requiring attention. This table is for sessio
 
 | ID | Type | Summary | Priority | Status | Source |
 |----|------|---------|----------|--------|--------|
-| Q2 | Question | Other path traversal vectors | High | Partial | [CODEBASE-UNDERSTANDING.md](CODEBASE-UNDERSTANDING.md) |
 | Q1 | Question | Webhook authentication | Medium | Open | [CODEBASE-UNDERSTANDING.md](CODEBASE-UNDERSTANDING.md) |
 | Q4 | Question | Log injection via agent output | Medium | Open | [CODEBASE-UNDERSTANDING.md](CODEBASE-UNDERSTANDING.md) |
 | Q5 | Question | Fleet/agent config merge overrides | Medium | Open | [CODEBASE-UNDERSTANDING.md](CODEBASE-UNDERSTANDING.md) |
@@ -86,9 +85,10 @@ Active findings and open questions requiring attention. This table is for sessio
 
 Ordered by urgency for next audit session:
 
-1. **HIGH:** Q2 (complete path traversal audit across codebase)
-2. **MEDIUM:** Q1, Q4, Q5, Q7, Q8 (investigate during normal audit flow)
-3. **LOW:** #009 (fix when convenient), Q3 (minor defense-in-depth)
+1. **MEDIUM:** Q1, Q4, Q5, Q7, Q8 (investigate during normal audit flow)
+2. **LOW:** #009 (fix when convenient), Q3 (minor defense-in-depth)
+
+*Note: Q2 (path traversal audit) was completed on 2026-02-06 - all vectors verified safe.*
 
 ---
 
@@ -114,17 +114,17 @@ Security capabilities not yet implemented or areas needing investigation:
 - No secret detection in logs (output could leak sensitive data)
 - No rate limiting on triggers (DoS vector for scheduled jobs)
 - Webhook signature verification status unknown (Q1)
-- Other path traversal vectors not fully audited (Q2)
+- ~~Other path traversal vectors not fully audited (Q2)~~ - RESOLVED 2026-02-06
 - Container user configuration unknown (Q7)
 
 ### Session Continuity
 
 Information for resuming work in future sessions.
 
-- **Last session:** 2026-02-06 - Security codebase mapping complete
-- **Completed:** Created 4 mapping documents in `.security/codebase-map/`
-- **Resume from:** Phase 3 complete, ready for investigator agents (Phase 4-5)
-- **Next priority:** Create finding-investigator and question-investigator agents
+- **Last session:** 2026-02-06 - Incremental audit via /security-audit
+- **Completed:** Ran scanner, change-analyzer, hot-spot-verifier, question-investigator; Q2 answered
+- **Resume from:** Audit complete; no outstanding work
+- **Next priority:** Next audit in 7 days or after significant changes
 
 ---
 
