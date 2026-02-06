@@ -8,6 +8,8 @@
     "lint": "turbo lint",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
+    "security": "npx tsx .security/tools/scan.ts",
+    "security:save": "npx tsx .security/tools/scan.ts --save",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm build && changeset publish"

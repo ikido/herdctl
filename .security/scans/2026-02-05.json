@@ -1,0 +1,147 @@
+{
+  "date": "2026-02-05",
+  "timestamp": "2026-02-05T18:22:16.164Z",
+  "commit": "f1efb0f",
+  "branch": "feature/security-scanner",
+  "checks": [
+    {
+      "name": "npm-audit",
+      "status": "warn",
+      "findings": [
+        {
+          "severity": "medium",
+          "description": "2 moderate vulnerabilities found in dependencies",
+          "recommendation": "Review and update affected packages when possible"
+        }
+      ],
+      "duration": 822
+    },
+    {
+      "name": "docker-config",
+      "status": "fail",
+      "findings": [
+        {
+          "severity": "high",
+          "location": "packages/core/src/runner/runtime/container-manager.ts:134",
+          "description": "hostConfigOverride can bypass Docker security hardening",
+          "recommendation": "Ensure this is only used at fleet-level config, never from agent input"
+        },
+        {
+          "severity": "high",
+          "location": "packages/core/src/runner/runtime/container-manager.ts:135",
+          "description": "hostConfigOverride can bypass Docker security hardening",
+          "recommendation": "Ensure this is only used at fleet-level config, never from agent input"
+        },
+        {
+          "severity": "high",
+          "location": "packages/core/src/runner/runtime/docker-config.ts:260",
+          "description": "hostConfigOverride can bypass Docker security hardening",
+          "recommendation": "Ensure this is only used at fleet-level config, never from agent input"
+        },
+        {
+          "severity": "high",
+          "location": "examples/runtime-showcase/agents/mixed-fleet.yaml:67",
+          "description": "network: none will break Claude API access",
+          "recommendation": "Use network: bridge for Claude agents - they need API access"
+        }
+      ],
+      "duration": 411
+    },
+    {
+      "name": "permission-modes",
+      "status": "fail",
+      "findings": [
+        {
+          "severity": "high",
+          "location": "examples/bragdoc-developer/agents/developer.yaml:43",
+          "description": "bypassPermissions used in 1 config file(s)",
+          "recommendation": "bypassPermissions bypasses ALL safety checks. Review each usage carefully."
+        },
+        {
+          "severity": "medium",
+          "location": "examples/runtime-showcase/agents/mixed-fleet.yaml:45, examples/runtime-showcase/agents/docker-agent.yaml:52, examples/runtime-showcase/agents/sdk-agent.yaml:22, examples/runtime-showcase/agents/cli-agent.yaml:24, examples/runtime-showcase/herdctl.yaml:19",
+          "description": "acceptEdits used in 5 config file(s)",
+          "recommendation": "acceptEdits auto-accepts file modifications. Ensure this is intentional."
+        }
+      ],
+      "duration": 87
+    },
+    {
+      "name": "subprocess-patterns",
+      "status": "warn",
+      "findings": [
+        {
+          "severity": "low",
+          "location": "packages/core/src/hooks/runners/shell.ts:8",
+          "description": "Direct child_process import - consider using execa instead",
+          "recommendation": "execa provides better escaping and cross-platform support"
+        },
+        {
+          "severity": "low",
+          "location": "packages/cli/src/commands/sessions.ts:14",
+          "description": "Direct child_process import - consider using execa instead",
+          "recommendation": "execa provides better escaping and cross-platform support"
+        },
+        {
+          "severity": "medium",
+          "location": "packages/core/src/hooks/runners/shell.ts:154",
+          "description": "shell: true option enables shell interpretation",
+          "recommendation": "Avoid shell: true unless necessary - it enables shell metacharacter processing"
+        },
+        {
+          "severity": "medium",
+          "location": "packages/cli/src/commands/sessions.ts:415",
+          "description": "shell: true option enables shell interpretation",
+          "recommendation": "Avoid shell: true unless necessary - it enables shell metacharacter processing"
+        }
+      ],
+      "duration": 87
+    },
+    {
+      "name": "path-safety",
+      "status": "fail",
+      "findings": [
+        {
+          "severity": "high",
+          "location": "packages/core/src/state/directory.ts",
+          "description": "State directory may lack path traversal protection",
+          "recommendation": "Add validation to prevent '../' in agent/job IDs and normalize paths"
+        }
+      ],
+      "duration": 6
+    },
+    {
+      "name": "env-handling",
+      "status": "fail",
+      "findings": [
+        {
+          "severity": "high",
+          "location": "packages/cli/src/commands/init.ts:339",
+          "description": "Potential secret 'token' in log statement",
+          "recommendation": "Redact sensitive values before logging or remove from log"
+        },
+        {
+          "severity": "high",
+          "location": "examples/library-usage/error-handling.ts:443",
+          "description": "Potential secret 'api_key' in log statement",
+          "recommendation": "Redact sensitive values before logging or remove from log"
+        },
+        {
+          "severity": "high",
+          "location": "examples/library-usage/error-handling.ts:444",
+          "description": "Potential secret 'api_key' in log statement",
+          "recommendation": "Redact sensitive values before logging or remove from log"
+        }
+      ],
+      "duration": 278
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "passed": 0,
+    "warned": 2,
+    "failed": 4
+  },
+  "status": "fail",
+  "duration": 1708
+}

@@ -6,9 +6,9 @@
  */
 
 import { readdir, unlink } from "node:fs/promises";
-import { join } from "node:path";
 import { atomicWriteJson } from "./utils/atomic.js";
 import { safeReadJson } from "./utils/reads.js";
+import { buildSafeFilePath } from "./utils/path-safety.js";
 import {
   SessionInfoSchema,
   createSessionInfo,
@@ -62,9 +62,13 @@ export type SessionInfoUpdates = Partial<
 
 /**
  * Get the file path for an agent's session
+ *
+ * Uses buildSafeFilePath for defense-in-depth against path traversal attacks.
+ * Agent names are also validated at the schema level, but this provides
+ * an additional safety check at the point of file path construction.
  */
 function getSessionFilePath(sessionsDir: string, agentName: string): string {
-  return join(sessionsDir, `${agentName}.json`);
+  return buildSafeFilePath(sessionsDir, agentName, ".json");
 }
 
 // =============================================================================
