@@ -119,10 +119,10 @@ Plans:
   3. Existing scan.ts scanner runs as first phase and results are integrated
   4. FINDINGS-INDEX.md and CODEBASE-UNDERSTANDING.md are updated after each audit
   5. Intelligence report written to .security/intel/YYYY-MM-DD.md
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 07-01: TBD
+- [ ] 07-01-PLAN.md - Create /security-audit orchestrator with 5-phase flow and conditional agent spawning
 
 ### Phase 8: Daily Automation
 **Goal**: Security audits can run fully automated on a schedule with results committed to dedicated branch
