@@ -9,7 +9,6 @@ allowed-tools:
   - Write
   - Edit
   - Task
-  - Skill
 ---
 
 <objective>
@@ -17,8 +16,8 @@ Meta-orchestrator for fully automated daily security audits with branch isolatio
 
 This command wraps the full security audit workflow with:
 1. **Branch management** - Commits to `security-audits` branch, keeping main clean
-2. **Full audit execution** - Invokes `/security-audit` with all its subagents
-3. **Self-review** - Invokes `/security-audit-review` to assess and improve
+2. **Full audit execution** - Delegates to security-auditor subagent
+3. **Self-review** - Delegates to security-reviewer subagent
 4. **Executive summary** - GREEN/YELLOW/RED status for quick triage
 5. **Unattended execution** - No user prompts or manual steps required
 
@@ -26,6 +25,23 @@ This command wraps the full security audit workflow with:
 </objective>
 
 <context>
+**Why we use subagents (CRITICAL for reliable execution):**
+
+This is a meta-orchestrator that coordinates multiple long-running tasks. We use Task tool
+with subagents instead of Skill tool for Phases 2 and 3 because:
+
+1. **Context preservation** - When using Skill tool, the orchestrator "forgets" its state
+   after the nested skill completes. This caused phases 4-6 to never execute.
+2. **Independent execution** - Task tool spawns separate subagents that run independently
+   while the orchestrator maintains its own context and state.
+3. **Reliable continuation** - After each subagent returns, the orchestrator reliably
+   proceeds to the next phase without state loss.
+4. **Long-running tasks** - Security audit and review are long-running operations that
+   should be delegated rather than inlined.
+
+**Rule:** Orchestrators must preserve their own context. Delegate long-running work to
+subagents via Task tool, not Skill tool.
+
 **Branch strategy:**
 - Daily audits commit to `security-audits` branch
 - Main branch stays clean from automated commits
@@ -33,18 +49,18 @@ This command wraps the full security audit workflow with:
 - Use `--force-with-lease` for safe push after rebase
 
 **Execution model:**
-- This is a meta-orchestrator that invokes other commands
-- `/security-audit` handles all deep analysis via its own subagents
-- `/security-audit-review` handles quality assessment and improvements
+- Phases 0, 1, 4, 5, 6 are orchestrator-level operations (branch mgmt, summary, commit)
+- Phase 2 delegates to `security-auditor` subagent for deep analysis
+- Phase 3 delegates to `security-reviewer` subagent for quality assessment
 - This orchestrator stays on security-audits branch throughout
 - All file writes happen on the correct branch automatically
 
 **Key outputs:**
-- `.security/scans/YYYY-MM-DD.json` - Scanner output (from /security-audit)
-- `.security/intel/YYYY-MM-DD.md` - Intelligence report (from /security-audit)
-- `.security/reviews/YYYY-MM-DD.md` - Self-review (from /security-audit-review)
-- `.security/summaries/YYYY-MM-DD.md` - Executive summary (this command)
-- `.security/STATE.md` - Audit baseline tracking (updated by both)
+- `.security/scans/YYYY-MM-DD.json` - Scanner output (from security-auditor)
+- `.security/intel/YYYY-MM-DD.md` - Intelligence report (from security-auditor)
+- `.security/reviews/YYYY-MM-DD.md` - Self-review (from security-reviewer)
+- `.security/summaries/YYYY-MM-DD.md` - Executive summary (this orchestrator)
+- `.security/STATE.md` - Audit baseline tracking (updated by subagents)
 </context>
 
 <process>
@@ -73,7 +89,7 @@ ORIGINAL_BRANCH=$(git branch --show-current)
 echo "Original branch: $ORIGINAL_BRANCH"
 ```
 
-Store `$ORIGINAL_BRANCH` for restoration in Phase 5.
+Store `$ORIGINAL_BRANCH` for restoration in Phase 6.
 
 **Set today's date:**
 ```bash
@@ -111,24 +127,39 @@ fi
 </step>
 
 <step name="phase_2_run_security_audit">
-## Phase 2: Run Full Security Audit
+## Phase 2: Run Full Security Audit (via Subagent)
 
-Invoke the `/security-audit` command which handles all deep analysis.
+Delegate the security audit to a dedicated subagent using Task tool.
 
-**Use the Skill tool to invoke /security-audit:**
+**IMPORTANT:** Use Task tool, NOT Skill tool. This ensures the orchestrator maintains
+its context and can reliably continue to subsequent phases.
 
-The `/security-audit` command will:
-1. Run the security scanner (scan.ts)
-2. Spawn change-analyzer to categorize commits since last audit
-3. Conditionally spawn hot-spot-verifier if critical files changed
-4. Conditionally spawn question-investigator if high-priority questions exist
-5. Aggregate all results
-6. Write intelligence report to `.security/intel/{TODAY}.md`
-7. Update FINDINGS-INDEX.md, CODEBASE-UNDERSTANDING.md, STATE.md
-8. Commit changes (if commit_docs=true in config)
+**Spawn security-auditor subagent:**
+```
+Use the Task tool with:
+- subagent_type: "security-auditor"
+- run_in_background: false (we need results before proceeding)
+- prompt: "Run the /security-audit command. Execute a full incremental security audit:
+    1. Run the security scanner (scan.ts)
+    2. Spawn change-analyzer to categorize commits since last audit
+    3. Conditionally spawn hot-spot-verifier if critical files changed
+    4. Conditionally spawn question-investigator if high-priority questions exist
+    5. Aggregate all results
+    6. Write intelligence report to .security/intel/{TODAY}.md
+    7. Update FINDINGS-INDEX.md, CODEBASE-UNDERSTANDING.md, STATE.md
+    8. Commit changes if configured
+
+    When complete, report back with:
+    - Overall result: PASS / WARN / FAIL
+    - Scanner findings count
+    - Commits analyzed count
+    - Hot spots verified count
+    - Questions investigated count
+    - Any new findings summary"
+```
 
 **Capture the audit result:**
-After /security-audit completes, extract key metrics from its output:
+After the subagent completes, extract key metrics from its response:
 - Overall result: PASS / WARN / FAIL
 - Scanner findings count
 - Commits analyzed
@@ -138,30 +169,44 @@ After /security-audit completes, extract key metrics from its output:
 
 Store these for the executive summary in Phase 4.
 
-**Wait for audit completion before proceeding.**
+**Wait for subagent completion before proceeding to Phase 3.**
 </step>
 
 <step name="phase_3_run_security_review">
-## Phase 3: Run Security Audit Review
+## Phase 3: Run Security Audit Review (via Subagent)
 
-Invoke the `/security-audit-review` command to assess audit quality and apply improvements.
+Delegate the security review to a dedicated subagent using Task tool.
 
-**Use the Skill tool to invoke /security-audit-review:**
+**IMPORTANT:** Use Task tool, NOT Skill tool. This ensures the orchestrator maintains
+its context and can reliably continue to subsequent phases.
 
-The `/security-audit-review` command will:
-1. Read the intelligence report just created
-2. Assess coverage against HOT-SPOTS.md (were all hot spots checked?)
-3. Assess progress on open questions
-4. Evaluate investigation depth
-5. Identify gaps and missed opportunities
-6. Write review to `.security/reviews/{TODAY}.md`
-7. Apply confident improvements:
-   - Update HOT-SPOTS.md if new critical areas found
-   - Add new questions to CODEBASE-UNDERSTANDING.md
-   - Propose updates to /security-audit.md if needed
+**Spawn security-reviewer subagent:**
+```
+Use the Task tool with:
+- subagent_type: "security-reviewer"
+- run_in_background: false (we need results before proceeding)
+- prompt: "Run the /security-audit-review command. Assess today's audit quality and apply improvements:
+    1. Read the intelligence report just created at .security/intel/{TODAY}.md
+    2. Assess coverage against HOT-SPOTS.md (were all hot spots checked?)
+    3. Assess progress on open questions
+    4. Evaluate investigation depth
+    5. Identify gaps and missed opportunities
+    6. Write review to .security/reviews/{TODAY}.md
+    7. Apply confident improvements:
+       - Update HOT-SPOTS.md if new critical areas found
+       - Add new questions to CODEBASE-UNDERSTANDING.md
+       - Propose updates to /security-audit.md if needed
+
+    When complete, report back with:
+    - Overall grade: A / B / C / D
+    - Coverage rating
+    - Depth rating
+    - Gaps identified count
+    - Improvements applied count and what was changed"
+```
 
 **Capture the review result:**
-After /security-audit-review completes, extract:
+After the subagent completes, extract:
 - Overall grade: A / B / C / D
 - Coverage rating
 - Depth rating
@@ -171,6 +216,8 @@ After /security-audit-review completes, extract:
 Store these for the executive summary.
 
 **This is the self-improvement loop:** The review can modify the audit command itself, making future audits better.
+
+**Wait for subagent completion before proceeding to Phase 4.**
 </step>
 
 <step name="phase_4_executive_summary">
@@ -258,7 +305,7 @@ Create `.security/summaries/{TODAY}.md`:
 
 ## Self-Improvement Applied
 
-{List any changes made by /security-audit-review:}
+{List any changes made by security-reviewer subagent:}
 - HOT-SPOTS.md: {changes or "No changes"}
 - CODEBASE-UNDERSTANDING.md: {changes or "No changes"}
 - security-audit.md: {changes or "No changes"}
@@ -274,7 +321,7 @@ Create `.security/summaries/{TODAY}.md`:
 
 Stage and commit all security artifacts to security-audits branch.
 
-**Note:** The /security-audit command may have already committed some files. Stage any remaining changes.
+**Note:** The subagents may have already committed some files. Stage any remaining changes.
 
 **Stage any uncommitted security files:**
 ```bash
@@ -291,7 +338,7 @@ git add .claude/commands/security-audit.md
 # Check what's staged
 STAGED=$(git diff --cached --name-only)
 if [ -z "$STAGED" ]; then
-  echo "No new changes to commit (audit commands already committed)"
+  echo "No new changes to commit (subagents already committed)"
 else
   echo "Files to commit:"
   echo "$STAGED"
@@ -388,16 +435,16 @@ If `git rebase main` has conflicts:
 - Continue with audit on current branch state
 - User can manually rebase later
 
-### /security-audit Fails
-If the audit command fails or times out:
+### security-auditor Subagent Fails
+If the audit subagent fails or times out:
 - Capture whatever output is available
 - Set AUDIT_RESULT="ERROR"
-- Still run /security-audit-review if possible (review can identify issues)
+- Still spawn security-reviewer if possible (review can identify issues)
 - Include error in executive summary
 - Don't fail the entire workflow
 
-### /security-audit-review Fails
-If the review command fails:
+### security-reviewer Subagent Fails
+If the review subagent fails:
 - Set REVIEW_GRADE="ERROR"
 - Still write executive summary based on audit results
 - Note review failure in summary
@@ -411,7 +458,7 @@ If `git push --force-with-lease` fails:
 - Don't fail the entire workflow
 
 ### No Changes Since Last Audit
-If /security-audit reports no commits since last audit:
+If security-auditor reports no commits since last audit:
 - Audit still runs (scanner check)
 - Review still runs (verify hot spots periodically)
 - Summary notes "No changes since last audit"
@@ -431,14 +478,14 @@ Checklist for complete daily audit:
 - [ ] Rebased on main (or graceful fallback)
 
 **Security Audit (Phase 2)**
-- [ ] /security-audit invoked via Skill tool
-- [ ] Audit completed (PASS/WARN/FAIL)
+- [ ] Task tool spawned security-auditor subagent
+- [ ] Subagent completed (PASS/WARN/FAIL)
 - [ ] Intelligence report written
 - [ ] STATE.md updated
 
 **Security Review (Phase 3)**
-- [ ] /security-audit-review invoked via Skill tool
-- [ ] Review completed (grade assigned)
+- [ ] Task tool spawned security-reviewer subagent
+- [ ] Subagent completed (grade assigned)
 - [ ] Review report written
 - [ ] Improvements applied (if any)
 
@@ -465,8 +512,8 @@ This command is designed for unattended daily execution.
 - Failures are logged but don't block completion
 
 **The self-improvement loop:**
-1. `/security-audit` does deep analysis with subagents
-2. `/security-audit-review` evaluates the audit quality
+1. `security-auditor` subagent does deep analysis
+2. `security-reviewer` subagent evaluates audit quality
 3. Review applies improvements to HOT-SPOTS.md, CODEBASE-UNDERSTANDING.md
 4. Review can even update /security-audit.md to improve future audits
 5. Next daily run uses the improved configuration
