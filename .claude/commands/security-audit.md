@@ -191,9 +191,18 @@ Based on change-analyzer results and open questions, conditionally spawn investi
 
 **Decision point 1: Hot-spot-verifier**
 
+Spawn hot-spot-verifier in two scenarios:
+
+**A) Change-triggered verification** (primary):
 IF change-analyzer recommends "VERIFY" (Category 1 hot spot touches found):
 - Extract the list of touched hot spot files from change-analyzer results
 - Spawn hot-spot-verifier with that file list
+
+**B) Periodic rotation verification** (defense-in-depth):
+IF no hot spots were modified AND it's been 5+ days since last audit:
+- Select 3 critical hot spots on a rotation basis
+- Spawn hot-spot-verifier to verify these files even without changes
+- This catches configuration drift, incomplete refactors, or silent defense failures
 
 Use Task tool with:
 - subagent_type: "hot-spot-verifier"

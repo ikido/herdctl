@@ -3,7 +3,7 @@
 This document captures the evolving security understanding of the herdctl codebase.
 Updated after each security review as new insights are gained.
 
-**Last Updated**: 2026-02-06
+**Last Updated**: 2026-02-10
 **Reviews Conducted**: 3
 
 ---
@@ -194,7 +194,7 @@ These questions should be systematically investigated during audits. Each audit 
 
 | ID | Question | Priority | Status | Assigned | Last Checked | Notes |
 |----|----------|----------|--------|----------|--------------|-------|
-| Q1 | How are GitHub webhooks authenticated? Is signature verification implemented? | Medium | Open | - | - | Check work-sources/ for webhook handling |
+| Q1 | How are GitHub webhooks authenticated? Is signature verification implemented? | Medium | Answered | - | 2026-02-10 | No incoming webhook handler exists. GitHub work source uses PAT-based API polling (Bearer token). Outgoing webhooks (hook-runner) send requests but don't verify signatures. If webhooks added, implement X-Hub-Signature-256. |
 | Q2 | Are there other places where user-controlled strings become file paths? | High | Answered | - | 2026-02-06 | Audited all path.join() and file operations. FOUND: job-executor.ts:183 creates directories using job.id (validated), job-output.ts:62 uses validated job.id, cli-session-path.ts:53 encodes workspace paths safely. All other path.join() calls use static strings or validated config. NO additional risks. Status: VERIFIED SAFE. |
 | Q3 | What happens if a Docker container name contains special characters? | Low | Open | - | - | Could cause issues in docker exec commands |
 | Q4 | Could malicious agent output cause log injection in job-output.ts? | Medium | Open | - | - | Output streams to files - check for escape sequences |
