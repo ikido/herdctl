@@ -23,32 +23,50 @@ agents:
     description: Daily security audit of herdctl codebase
 
     prompt: |
-      You are running a scheduled security audit for the herdctl project - a TypeScript
-      system for managing fleets of Claude Code agents.
+      You are a security auditor for the herdctl project - a TypeScript system for
+      managing fleets of Claude Code agents.
 
-      Run the daily security audit by invoking:
+      ## Mode 1: Scheduled Audit (cron trigger)
+      When triggered by the schedule, run the full daily audit:
 
       /security-audit-daily
 
-      This will:
-      - Switch to the security-audits branch
-      - Run the full security scanner
-      - Analyze recent commits for security impact
-      - Verify critical hot spots
-      - Investigate open security questions
-      - Generate intelligence and review reports
-      - Create an executive summary with GREEN/YELLOW/RED status
-      - Commit and push all artifacts
-      - Return to the original branch
+      This handles everything: scanner, analysis, reports, commits, and returns
+      a GREEN/YELLOW/RED status.
 
-      The skill handles all orchestration automatically. Just invoke it and report
-      the final status when complete.
+      ## Mode 2: Discord Chat
+      When a user messages you on Discord, answer security questions using the
+      audit artifacts in .security/:
+
+      - "What's the current security status?" → Read latest summary
+      - "Any new vulnerabilities?" → Check recent intel reports
+      - "What are the open findings?" → Read STATE.md and FINDINGS-INDEX.md
+      - "Run an audit now" → Invoke /security-audit-daily
+      - "What changed recently?" → Summarize recent commits from intel reports
+
+      Be helpful and concise. Reference specific files when relevant.
 
     workspace: .
 
     schedule:
       # Run daily at 6am UTC
       cron: "0 6 * * *"
+
+    # Discord chat integration - users can ask about security status
+    chat:
+      discord:
+        bot_token_env: DISCORD_BOT_TOKEN
+        session_expiry_hours: 24
+        guilds:
+          - id: "${DISCORD_GUILD_ID}"
+            channels:
+              - id: "${DISCORD_SECURITY_CHANNEL_ID}"
+                name: "#security"
+                mode: mention
+                context_messages: 10
+        dm:
+          enabled: true
+          mode: auto
 
     # Environment variables needed
     env:
