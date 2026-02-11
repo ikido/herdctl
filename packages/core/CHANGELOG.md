@@ -1,5 +1,23 @@
 # @herdctl/core
 
+## 3.0.2
+
+### Patch Changes
+
+- [#44](https://github.com/edspencer/herdctl/pull/44) [`3ff726f`](https://github.com/edspencer/herdctl/commit/3ff726fbe192109d89847b4c0c47b255d1ac82cd) Thanks [@edspencer](https://github.com/edspencer)! - Fix cron schedules never firing after first trigger
+
+  The scheduler's cron check logic incorrectly skipped to the next future occurrence
+  when the scheduled time arrived, instead of recognizing it as due. This caused cron
+  schedules to never trigger after the initial run because `calculateNextCronTrigger(expression, now)`
+  always returns a time in the future.
+
+  The fix simplifies the logic to use `calculateNextCronTrigger(expression, lastRunAt)` directly,
+  letting `isScheduleDue()` determine if it's time to trigger. After triggering, `last_run_at`
+  updates to the current time, naturally advancing the schedule to the next occurrence.
+
+- Updated dependencies []:
+  - @herdctl/discord@0.1.10
+
 ## 3.0.1
 
 ### Patch Changes
