@@ -240,70 +240,92 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
       this.emit("message", messageEvent);
     });
 
-    // Handle thread replies — continues existing conversations
+    // Handle all messages — thread replies AND top-level channel messages
     this.app.event("message", async ({ event, say }: { event: MessageEvent; say: SayFn }) => {
-      // Only process thread replies
-      if (!event.thread_ts) return;
-
       this.messagesReceived++;
 
       if (!this.botUserId) return;
 
-      // Ignore bot messages
+      // Ignore bot messages and own messages
       if (!shouldProcessMessage(event, this.botUserId)) {
         this.messagesIgnored++;
+        this.logger.debug("Skipping bot/own message", {
+          channel: event.channel,
+          botId: event.bot_id,
+          user: event.user,
+        });
         return;
       }
 
-      // Check if this thread is an active conversation
-      const agentName = this.activeThreads.get(event.thread_ts);
-      if (!agentName) {
-        // Could also be in a channel we know about — check channel routing
-        const channelAgent = this.channelAgentMap.get(event.channel);
-        if (!channelAgent) {
-          this.messagesIgnored++;
-          return;
-        }
-
-        // Check if the bot was mentioned (to start tracking this thread)
-        if (
-          typeof event.text === "string" &&
-          isBotMentioned(event.text, this.botUserId)
-        ) {
-          this.activeThreads.set(event.thread_ts, channelAgent);
-        } else {
-          // Thread reply in a known channel but bot wasn't mentioned
-          // and we're not tracking this thread — check if we have a session
-          const sessionManager = this.sessionManagers.get(channelAgent);
-          if (sessionManager) {
-            const session = await sessionManager.getSession(event.thread_ts);
-            if (session) {
-              // We have a session — track and process
-              this.activeThreads.set(event.thread_ts, channelAgent);
-            } else {
-              this.messagesIgnored++;
-              return;
-            }
-          } else {
-            this.messagesIgnored++;
-            return;
-          }
-        }
+      // Skip @mentions — handled by the app_mention handler above
+      if (
+        typeof event.text === "string" &&
+        isBotMentioned(event.text, this.botUserId)
+      ) {
+        this.logger.debug("Skipping @mention message (handled by app_mention)", {
+          channel: event.channel,
+          ts: event.ts,
+        });
+        return;
       }
 
-      const resolvedAgent =
-        this.activeThreads.get(event.thread_ts) ??
-        this.channelAgentMap.get(event.channel);
+      // Resolve the thread key: existing thread_ts or this message's ts for top-level
+      const threadTs = event.thread_ts ?? event.ts;
+
+      // Resolve agent for this message
+      let resolvedAgent: string | undefined;
+
+      if (event.thread_ts) {
+        // Thread reply — try activeThreads first
+        resolvedAgent = this.activeThreads.get(event.thread_ts);
+
+        if (!resolvedAgent) {
+          // Not in memory — check if channel is configured
+          const channelAgent = this.channelAgentMap.get(event.channel);
+          if (channelAgent) {
+            // Try to recover from session manager (survives restarts)
+            const sessionManager = this.sessionManagers.get(channelAgent);
+            if (sessionManager) {
+              const session = await sessionManager.getSession(event.thread_ts);
+              if (session) {
+                this.logger.debug("Recovered thread from session manager", {
+                  channel: event.channel,
+                  threadTs: event.thread_ts,
+                  agent: channelAgent,
+                });
+                resolvedAgent = channelAgent;
+              }
+            }
+          }
+        }
+      } else {
+        // Top-level channel message (no thread) — route via channel map
+        resolvedAgent = this.channelAgentMap.get(event.channel);
+        if (resolvedAgent) {
+          this.logger.debug("Top-level channel message", {
+            channel: event.channel,
+            agent: resolvedAgent,
+            ts: event.ts,
+          });
+        }
+      }
 
       if (!resolvedAgent) {
         this.messagesIgnored++;
+        this.logger.debug("No agent resolved for message", {
+          channel: event.channel,
+          threadTs: event.thread_ts,
+          hasActiveThread: event.thread_ts
+            ? this.activeThreads.has(event.thread_ts)
+            : false,
+        });
         return;
       }
 
-      const prompt = processMessage(
-        event.text ?? "",
-        this.botUserId
-      );
+      // Track this thread for future reply routing
+      this.activeThreads.set(threadTs, resolvedAgent);
+
+      const prompt = processMessage(event.text ?? "", this.botUserId);
 
       if (!prompt) {
         this.messagesIgnored++;
@@ -314,10 +336,10 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
         resolvedAgent,
         prompt,
         event.channel,
-        event.thread_ts,
+        threadTs,
         event.ts,
         event.user ?? "",
-        isBotMentioned(event.text ?? "", this.botUserId),
+        false,
         say
       );
 

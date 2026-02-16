@@ -61,24 +61,21 @@ Implemented a complete Slack integration for herdctl, adding a new `@herdctl/sla
 
 ## Current State
 
-- **Branch**: `feature/slack-integration` (pushed to `origin` = `ikido/herdctl`)
+- **Branch**: `feautres/specs/features/001-slack-integration` (pushed to `origin` = `ikido/herdctl`)
 - **Commit**: `e76efb9` — single commit with all 46 files
 - **Quality gates**: `pnpm build`, `pnpm typecheck`, `pnpm test` all pass
 - **PR #46** in upstream `edspencer/herdctl`: **CLOSED** (opened by mistake, will reopen after testing)
-- **NOT manually tested** — no real Slack workspace test has been done
+- **DEPLOYED and live** on dev server — see `DEPLOYMENT_NOTES.md` for full details
+- **Two bugs found** during live testing: WEA-12 (no channel message handling) and WEA-13 (no thread reply handling)
 
 ## Next Steps
 
-1. **Manual test with real Slack workspace**:
-   - Create a Slack App with Socket Mode enabled
-   - Generate bot token (xoxb-) and app-level token (xapp-)
-   - Set required scopes: `app_mentions:read`, `chat:write`, `channels:history`
-   - Subscribe to events: `app_mention`, `message.channels`
-   - Set env vars and run `herdctl start` with the example config
-   - Verify: @mention creates thread, replies continue in-thread, `!reset`/`!status`/`!help` work
-2. **Fix any issues found during manual testing**
-3. **Reopen PR** in the upstream repo (or create new one from fork)
-4. **Consider**: README for the slack package, docs site updates
+1. **Fix WEA-13** — Handle `message` events with `thread_ts` so thread replies continue conversations
+2. **Fix WEA-12** — Handle `message` events in configured channels (not just @mentions)
+3. **Fix network schema** — Accept custom Docker network names (not just `none`/`bridge`/`host`)
+4. **Publish to npm** — Merge PR so changesets publish `@herdctl/slack`
+5. **Reopen PR** in the upstream repo (or create new one from fork)
+6. **Consider**: README for the slack package, docs site updates
 
 ## Relevant Files
 

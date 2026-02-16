@@ -1,6 +1,6 @@
 # Feature: Slack Integration for herdctl
 
-## Status: PLANNING
+## Status: DEPLOYED (live on dev server, bugs found — see DEPLOYMENT_NOTES.md)
 
 ## Context
 
