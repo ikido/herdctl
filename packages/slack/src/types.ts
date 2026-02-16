@@ -66,6 +66,19 @@ export interface SlackConnectorState {
 /**
  * Options for creating a SlackConnector
  */
+/**
+ * Per-channel configuration
+ */
+export interface SlackChannelConfig {
+  /** Channel message mode: "mention" = only @mentions, "auto" = all messages */
+  mode: "mention" | "auto";
+  /** Number of context messages (future use) */
+  contextMessages: number;
+}
+
+/**
+ * Options for creating a SlackConnector
+ */
 export interface SlackConnectorOptions {
   /** Slack Bot Token (xoxb-...) */
   botToken: string;
@@ -75,6 +88,9 @@ export interface SlackConnectorOptions {
 
   /** Map of channel ID to agent name for routing */
   channelAgentMap: Map<string, string>;
+
+  /** Per-channel configuration (keyed by channel ID) */
+  channelConfigs?: Map<string, SlackChannelConfig>;
 
   /** Session managers keyed by agent name */
   sessionManagers: Map<string, ISlackSessionManager>;
@@ -167,11 +183,19 @@ export interface ISlackConnector extends EventEmitter {
   /** Get current state */
   getState(): SlackConnectorState;
 
-  /** Event subscription */
-  on(event: "message", listener: (payload: SlackMessageEvent) => void): this;
-  on(event: "error", listener: (payload: SlackErrorEvent) => void): this;
-  on(event: string, listener: (...args: unknown[]) => void): this;
-  off(event: string, listener: (...args: unknown[]) => void): this;
+  /** Type-safe event subscription */
+  on<K extends SlackConnectorEventName>(
+    event: K,
+    listener: (payload: SlackConnectorEventMap[K]) => void
+  ): this;
+  once<K extends SlackConnectorEventName>(
+    event: K,
+    listener: (payload: SlackConnectorEventMap[K]) => void
+  ): this;
+  off<K extends SlackConnectorEventName>(
+    event: K,
+    listener: (payload: SlackConnectorEventMap[K]) => void
+  ): this;
 }
 
 // =============================================================================
@@ -216,14 +240,57 @@ export interface ISlackSessionManager {
 
 /**
  * Strongly-typed event map for SlackConnector
+ *
+ * Uses object syntax matching Discord's DiscordConnectorEventMap pattern.
  */
 export interface SlackConnectorEventMap {
-  message: [payload: SlackMessageEvent];
-  error: [payload: SlackErrorEvent];
-  connected: [];
-  disconnected: [];
+  /** Emitted when connection is established and ready */
+  ready: {
+    botUser: {
+      id: string;
+      username: string;
+    };
+  };
+
+  /** Emitted when connection is lost */
+  disconnect: {
+    reason: string;
+  };
+
+  /** Emitted on connection error */
+  error: {
+    error: Error;
+  };
+
+  /** Emitted when a processable message is received */
+  message: SlackMessageEvent;
+
+  /** Emitted when a message is ignored */
+  messageIgnored: {
+    agentName: string;
+    reason: "not_configured" | "bot_message" | "no_agent_resolved" | "empty_prompt";
+    channelId: string;
+    messageTs: string;
+  };
+
+  /** Emitted when a prefix command is executed */
+  commandExecuted: {
+    agentName: string;
+    commandName: string;
+    userId: string;
+    channelId: string;
+  };
+
+  /** Emitted when a session is created, resumed, expired, or cleared */
+  sessionLifecycle: {
+    agentName: string;
+    event: "created" | "resumed" | "expired" | "cleared";
+    channelId: string;
+    threadTs: string;
+    sessionId: string;
+  };
 }
 
 export type SlackConnectorEventName = keyof SlackConnectorEventMap;
 export type SlackConnectorEventPayload<E extends SlackConnectorEventName> =
-  SlackConnectorEventMap[E] extends [infer P] ? P : void;
+  SlackConnectorEventMap[E];

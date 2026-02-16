@@ -625,6 +625,10 @@ export const SlackChannelSchema = z.object({
   id: z.string(),
   /** Human-readable channel name (for documentation) */
   name: z.string().optional(),
+  /** Channel message mode: "mention" = only respond to @mentions, "auto" = respond to all messages */
+  mode: z.enum(["mention", "auto"]).default("mention"),
+  /** Number of context messages to include (future use) */
+  context_messages: z.number().int().positive().default(10),
 });
 
 /**

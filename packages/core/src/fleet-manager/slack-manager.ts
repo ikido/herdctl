@@ -74,9 +74,10 @@ export interface SlackMessageEvent {
 
 /**
  * Error event payload from SlackConnector
+ *
+ * Note: No agentName — the connector is shared across agents.
  */
 export interface SlackErrorEvent {
-  agentName: string;
   error: Error;
 }
 
@@ -100,6 +101,8 @@ interface ISlackConnector {
   getState(): SlackConnectorState;
   on(event: "message", listener: (payload: SlackMessageEvent) => void): this;
   on(event: "error", listener: (payload: SlackErrorEvent) => void): this;
+  on(event: "ready", listener: (payload: { botUser: { id: string; username: string } }) => void): this;
+  on(event: "disconnect", listener: (payload: { reason: string }) => void): this;
   on(event: string, listener: (...args: unknown[]) => void): this;
   off(event: string, listener: (...args: unknown[]) => void): this;
 }
@@ -126,6 +129,7 @@ interface SlackModule {
     botToken: string;
     appToken: string;
     channelAgentMap: Map<string, string>;
+    channelConfigs?: Map<string, { mode: "mention" | "auto"; contextMessages: number }>;
     sessionManagers: Map<string, ISlackSessionManager>;
     logger?: SlackLogger;
     stateDir?: string;
@@ -263,6 +267,7 @@ export class SlackManager {
   private connector: ISlackConnector | null = null;
   private sessionManagers: Map<string, ISlackSessionManager> = new Map();
   private channelAgentMap: Map<string, string> = new Map();
+  private channelConfigs: Map<string, { mode: "mention" | "auto"; contextMessages: number }> = new Map();
   private initialized: boolean = false;
 
   constructor(private ctx: FleetManagerContext) {}
@@ -369,6 +374,10 @@ export class SlackManager {
           );
         }
         this.channelAgentMap.set(channel.id, agent.name);
+        this.channelConfigs.set(channel.id, {
+          mode: channel.mode ?? "mention",
+          contextMessages: channel.context_messages ?? 10,
+        });
       }
 
       logger.debug(`Configured Slack routing for agent '${agent.name}' with ${slackConfig.channels.length} channel(s)`);
@@ -380,6 +389,7 @@ export class SlackManager {
         botToken,
         appToken,
         channelAgentMap: this.channelAgentMap,
+        channelConfigs: this.channelConfigs,
         sessionManagers: this.sessionManagers,
         stateDir,
         logger: {
@@ -428,7 +438,7 @@ export class SlackManager {
     });
 
     this.connector.on("error", (event: SlackErrorEvent) => {
-      this.handleError(event.agentName, event.error);
+      this.handleError("slack", event.error);
     });
 
     try {
@@ -546,6 +556,13 @@ export class SlackManager {
         if (existingSession) {
           existingSessionId = existingSession.sessionId;
           logger.debug(`Resuming session for thread ${event.metadata.threadTs}: ${existingSessionId}`);
+          emitter.emit("slack:session:lifecycle", {
+            agentName,
+            event: "resumed",
+            channelId: event.metadata.channelId,
+            threadTs: event.metadata.threadTs,
+            sessionId: existingSessionId,
+          });
         } else {
           logger.debug(`No existing session for thread ${event.metadata.threadTs}, starting new conversation`);
         }
@@ -621,6 +638,7 @@ export class SlackManager {
 
       // Store the SDK session ID for future conversation continuity
       if (sessionManager && result.sessionId && result.success) {
+        const isNewSession = existingSessionId === null;
         try {
           await sessionManager.setSession(
             event.metadata.threadTs,
@@ -628,6 +646,16 @@ export class SlackManager {
             event.metadata.channelId
           );
           logger.debug(`Stored session ${result.sessionId} for thread ${event.metadata.threadTs}`);
+
+          if (isNewSession) {
+            emitter.emit("slack:session:lifecycle", {
+              agentName,
+              event: "created",
+              channelId: event.metadata.channelId,
+              threadTs: event.metadata.threadTs,
+              sessionId: result.sessionId,
+            });
+          }
         } catch (sessionError) {
           const errorMessage = sessionError instanceof Error ? sessionError.message : String(sessionError);
           logger.warn(`Failed to store session: ${errorMessage}`);

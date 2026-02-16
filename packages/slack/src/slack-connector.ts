@@ -18,14 +18,23 @@ import type {
   SlackConnectionStatus,
   SlackConnectorLogger,
   SlackMessageEvent,
+  SlackChannelConfig,
   ISlackConnector,
   ISlackSessionManager,
+  SlackConnectorEventMap,
+  SlackConnectorEventName,
 } from "./types.js";
 import {
   shouldProcessMessage,
   processMessage,
   isBotMentioned,
 } from "./message-handler.js";
+import {
+  CommandHandler,
+  helpCommand,
+  resetCommand,
+  statusCommand,
+} from "./commands/index.js";
 import { AlreadyConnectedError, SlackConnectionError } from "./errors.js";
 import { createDefaultSlackLogger } from "./logger.js";
 
@@ -37,12 +46,16 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
   private readonly botToken: string;
   private readonly appToken: string;
   private readonly channelAgentMap: Map<string, string>;
+  private readonly channelConfigs: Map<string, SlackChannelConfig>;
   private readonly sessionManagers: Map<string, ISlackSessionManager>;
   private readonly logger: SlackConnectorLogger;
 
   // Bolt App instance (dynamically imported)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private app: any = null;
+
+  // Command handler for prefix commands (!help, !reset, !status)
+  private commandHandler: CommandHandler | null = null;
 
   // Connection state
   private status: SlackConnectionStatus = "disconnected";
@@ -67,6 +80,7 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
     this.botToken = options.botToken;
     this.appToken = options.appToken;
     this.channelAgentMap = options.channelAgentMap;
+    this.channelConfigs = options.channelConfigs ?? new Map();
     this.sessionManagers = options.sessionManagers;
     this.logger = options.logger ?? createDefaultSlackLogger();
   }
@@ -104,6 +118,12 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
       this.botUserId = authResult.user_id as string;
       this.botUsername = authResult.user as string;
 
+      // Initialize command handler with built-in commands
+      this.commandHandler = new CommandHandler({ logger: this.logger });
+      this.commandHandler.registerCommand(helpCommand);
+      this.commandHandler.registerCommand(resetCommand);
+      this.commandHandler.registerCommand(statusCommand);
+
       this.status = "connected";
       this.connectedAt = new Date().toISOString();
       this.disconnectedAt = null;
@@ -116,7 +136,26 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
         channelCount: this.channelAgentMap.size,
       });
 
-      this.emit("connected");
+      this.emit("ready", {
+        botUser: {
+          id: this.botUserId!,
+          username: this.botUsername ?? "unknown",
+        },
+      });
+
+      // Clean up expired sessions on startup (matching Discord behavior)
+      for (const [agentName, sessionManager] of this.sessionManagers) {
+        try {
+          const cleaned = await sessionManager.cleanupExpiredSessions();
+          if (cleaned > 0) {
+            this.logger.info(`Cleaned ${cleaned} expired session(s) for agent '${agentName}'`);
+          }
+        } catch (cleanupError) {
+          this.logger.warn(`Failed to cleanup sessions for agent '${agentName}'`, {
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          });
+        }
+      }
     } catch (error) {
       this.status = "error";
       this.lastError =
@@ -150,11 +189,16 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
         this.app = null;
       }
 
+      this.commandHandler = null;
       this.status = "disconnected";
       this.disconnectedAt = new Date().toISOString();
 
-      this.logger.info("Disconnected from Slack");
-      this.emit("disconnected");
+      this.logger.info("Disconnected from Slack", {
+        messagesReceived: this.messagesReceived,
+        messagesSent: this.messagesSent,
+        messagesIgnored: this.messagesIgnored,
+      });
+      this.emit("disconnect", { reason: "Intentional disconnect" });
     } catch (error) {
       this.status = "error";
       this.lastError =
@@ -167,7 +211,7 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
   }
 
   isConnected(): boolean {
-    return this.status === "connected";
+    return this.status === "connected" && this.app !== null;
   }
 
   getState(): SlackConnectorState {
@@ -208,6 +252,12 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
       const agentName = this.channelAgentMap.get(event.channel);
       if (!agentName) {
         this.messagesIgnored++;
+        this.emit("messageIgnored", {
+          agentName: "unknown",
+          reason: "not_configured",
+          channelId: event.channel,
+          messageTs: event.ts,
+        });
         this.logger.debug("Ignoring mention in unconfigured channel", {
           channel: event.channel,
         });
@@ -217,11 +267,23 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
       const prompt = processMessage(event.text, this.botUserId);
       if (!prompt) {
         this.messagesIgnored++;
+        this.emit("messageIgnored", {
+          agentName,
+          reason: "empty_prompt",
+          channelId: event.channel,
+          messageTs: event.ts,
+        });
         return;
       }
 
       // Thread timestamp: use existing thread or create from this message
       const threadTs = event.thread_ts ?? event.ts;
+
+      // Check for prefix commands before processing as a message
+      const wasCommand = await this.tryExecuteCommand(
+        prompt, agentName, event.channel, threadTs, event.user, say
+      );
+      if (wasCommand) return;
 
       // Track this thread for future reply routing
       this.activeThreads.set(threadTs, agentName);
@@ -249,6 +311,12 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
       // Ignore bot messages and own messages
       if (!shouldProcessMessage(event, this.botUserId)) {
         this.messagesIgnored++;
+        this.emit("messageIgnored", {
+          agentName: "unknown",
+          reason: "bot_message",
+          channelId: event.channel,
+          messageTs: event.ts,
+        });
         this.logger.debug("Skipping bot/own message", {
           channel: event.channel,
           botId: event.bot_id,
@@ -302,7 +370,27 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
         // Top-level channel message (no thread) — route via channel map
         resolvedAgent = this.channelAgentMap.get(event.channel);
         if (resolvedAgent) {
-          this.logger.debug("Top-level channel message", {
+          // Check channel mode: "mention" mode skips top-level messages
+          // (they should go through app_mention handler instead)
+          const channelConfig = this.channelConfigs.get(event.channel);
+          const mode = channelConfig?.mode ?? "mention";
+          if (mode === "mention") {
+            this.messagesIgnored++;
+            this.emit("messageIgnored", {
+              agentName: resolvedAgent,
+              reason: "not_configured",
+              channelId: event.channel,
+              messageTs: event.ts,
+            });
+            this.logger.debug("Ignoring top-level message in mention-mode channel", {
+              channel: event.channel,
+              agent: resolvedAgent,
+              mode,
+            });
+            return;
+          }
+
+          this.logger.debug("Top-level channel message (auto mode)", {
             channel: event.channel,
             agent: resolvedAgent,
             ts: event.ts,
@@ -312,6 +400,12 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
 
       if (!resolvedAgent) {
         this.messagesIgnored++;
+        this.emit("messageIgnored", {
+          agentName: "unknown",
+          reason: "no_agent_resolved",
+          channelId: event.channel,
+          messageTs: event.ts,
+        });
         this.logger.debug("No agent resolved for message", {
           channel: event.channel,
           threadTs: event.thread_ts,
@@ -329,8 +423,20 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
 
       if (!prompt) {
         this.messagesIgnored++;
+        this.emit("messageIgnored", {
+          agentName: resolvedAgent,
+          reason: "empty_prompt",
+          channelId: event.channel,
+          messageTs: event.ts,
+        });
         return;
       }
+
+      // Check for prefix commands before processing as a message
+      const wasCommand = await this.tryExecuteCommand(
+        prompt, resolvedAgent, event.channel, threadTs, event.user ?? "", say
+      );
+      if (wasCommand) return;
 
       const messageEvent = this.buildMessageEvent(
         resolvedAgent,
@@ -345,6 +451,61 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
 
       this.emit("message", messageEvent);
     });
+  }
+
+  // ===========================================================================
+  // Command Handling
+  // ===========================================================================
+
+  /**
+   * Try to execute a prefix command. Returns true if a command was handled.
+   */
+  private async tryExecuteCommand(
+    prompt: string,
+    agentName: string,
+    channelId: string,
+    threadTs: string,
+    userId: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    say: any
+  ): Promise<boolean> {
+    if (!this.commandHandler || !this.commandHandler.isCommand(prompt)) {
+      return false;
+    }
+
+    const sessionManager = this.sessionManagers.get(agentName);
+    if (!sessionManager) {
+      return false;
+    }
+
+    const executed = await this.commandHandler.executeCommand(prompt, {
+      agentName,
+      threadTs,
+      channelId,
+      userId,
+      reply: async (content: string) => {
+        await say({ text: content, thread_ts: threadTs });
+      },
+      sessionManager,
+      connectorState: this.getState(),
+    });
+
+    if (executed) {
+      const commandName = prompt.trim().slice(1).split(/\s+/)[0];
+      this.logger.info("Command executed", {
+        command: commandName,
+        agentName,
+        channelId,
+      });
+      this.emit("commandExecuted", {
+        agentName,
+        commandName,
+        userId,
+        channelId,
+      });
+    }
+
+    return executed;
   }
 
   // ===========================================================================
@@ -413,6 +574,38 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
       reply,
       startProcessingIndicator,
     };
+  }
+
+  // ===========================================================================
+  // Type-Safe Event Emitter Overrides
+  // ===========================================================================
+
+  override emit<K extends SlackConnectorEventName>(
+    event: K,
+    payload: SlackConnectorEventMap[K]
+  ): boolean {
+    return super.emit(event, payload);
+  }
+
+  override on<K extends SlackConnectorEventName>(
+    event: K,
+    listener: (payload: SlackConnectorEventMap[K]) => void
+  ): this {
+    return super.on(event, listener);
+  }
+
+  override once<K extends SlackConnectorEventName>(
+    event: K,
+    listener: (payload: SlackConnectorEventMap[K]) => void
+  ): this {
+    return super.once(event, listener);
+  }
+
+  override off<K extends SlackConnectorEventName>(
+    event: K,
+    listener: (payload: SlackConnectorEventMap[K]) => void
+  ): this {
+    return super.off(event, listener);
   }
 }
 

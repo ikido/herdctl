@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { SlackConnector } from "../slack-connector.js";
-import type { ISlackSessionManager, SlackMessageEvent } from "../types.js";
+import type { ISlackSessionManager, SlackMessageEvent, SlackChannelConfig } from "../types.js";
 
 const BOT_USER_ID = "U0123456789";
 const CHANNEL_ID = "C_GENERAL";
@@ -35,10 +35,12 @@ const createMockSessionManager = (
  */
 function createTestConnector(options?: {
   channelAgentMap?: Map<string, string>;
+  channelConfigs?: Map<string, SlackChannelConfig>;
   sessionManagers?: Map<string, ISlackSessionManager>;
 }) {
   const channelAgentMap =
     options?.channelAgentMap ?? new Map([[CHANNEL_ID, AGENT_NAME]]);
+  const channelConfigs = options?.channelConfigs;
   const sessionManagers =
     options?.sessionManagers ??
     new Map([[AGENT_NAME, createMockSessionManager()]]);
@@ -47,6 +49,7 @@ function createTestConnector(options?: {
     botToken: "xoxb-fake",
     appToken: "xapp-fake",
     channelAgentMap,
+    channelConfigs,
     sessionManagers,
     logger: createMockLogger(),
   });
@@ -275,8 +278,10 @@ describe("SlackConnector registerEventHandlers", () => {
   });
 
   describe("message handler — top-level channel messages (WEA-12)", () => {
-    it("routes top-level message in configured channel to agent", async () => {
-      const { connector, handlers, say } = createTestConnector();
+    it("routes top-level message in auto-mode channel to agent", async () => {
+      const { connector, handlers, say } = createTestConnector({
+        channelConfigs: new Map([[CHANNEL_ID, { mode: "auto", contextMessages: 10 }]]),
+      });
       const messages = captureMessages(connector);
 
       await handlers["event:message"]({
@@ -296,6 +301,24 @@ describe("SlackConnector registerEventHandlers", () => {
       expect(messages[0].metadata.wasMentioned).toBe(false);
       // threadTs should be the message's own ts (creates a new thread)
       expect(messages[0].metadata.threadTs).toBe("1707930001.000001");
+    });
+
+    it("ignores top-level message in mention-mode channel (default)", async () => {
+      const { connector, handlers, say } = createTestConnector();
+      const messages = captureMessages(connector);
+
+      await handlers["event:message"]({
+        event: {
+          type: "message",
+          user: "UUSER1",
+          text: "hello bot",
+          ts: "1707930001.000001",
+          channel: CHANNEL_ID,
+        },
+        say,
+      });
+
+      expect(messages).toHaveLength(0);
     });
 
     it("ignores top-level message in unconfigured channel", async () => {
@@ -455,7 +478,7 @@ describe("SlackConnector registerEventHandlers", () => {
         say,
       });
 
-      // Successful → received only (not ignored)
+      // Top-level in configured channel with default mention mode → also ignored
       await handlers["event:message"]({
         event: {
           type: "message",
@@ -469,13 +492,15 @@ describe("SlackConnector registerEventHandlers", () => {
 
       const state = connector.getState();
       expect(state.messageStats.received).toBe(3);
-      expect(state.messageStats.ignored).toBe(2);
+      expect(state.messageStats.ignored).toBe(3);
     });
   });
 
   describe("reply function", () => {
     it("sends reply in the correct thread", async () => {
-      const { connector, handlers, say } = createTestConnector();
+      const { connector, handlers, say } = createTestConnector({
+        channelConfigs: new Map([[CHANNEL_ID, { mode: "auto", contextMessages: 10 }]]),
+      });
       const messages = captureMessages(connector);
 
       await handlers["event:message"]({

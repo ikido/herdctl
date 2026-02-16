@@ -83,7 +83,7 @@ const defaultSlackConfig: AgentChatSlack = {
   app_token_env: "SLACK_APP_TOKEN",
   session_expiry_hours: 24,
   log_level: "standard",
-  channels: [{ id: "C0123456789" }],
+  channels: [{ id: "C0123456789", mode: "mention", context_messages: 10 }],
 };
 
 function createConfigWithAgents(
@@ -474,11 +474,11 @@ describe("SlackManager (mocked @herdctl/slack)", () => {
       const config = createConfigWithAgents(
         createSlackAgent("agent1", {
           ...defaultSlackConfig,
-          channels: [{ id: "C001" }, { id: "C002" }],
+          channels: [{ id: "C001", mode: "mention" as const, context_messages: 10 }, { id: "C002", mode: "mention" as const, context_messages: 10 }],
         }),
         createSlackAgent("agent2", {
           ...defaultSlackConfig,
-          channels: [{ id: "C003" }],
+          channels: [{ id: "C003", mode: "mention" as const, context_messages: 10 }],
         })
       );
       const ctx = createMockContext(config);
@@ -498,11 +498,11 @@ describe("SlackManager (mocked @herdctl/slack)", () => {
       const config = createConfigWithAgents(
         createSlackAgent("agent1", {
           ...defaultSlackConfig,
-          channels: [{ id: "C001" }],
+          channels: [{ id: "C001", mode: "mention" as const, context_messages: 10 }],
         }),
         createSlackAgent("agent2", {
           ...defaultSlackConfig,
-          channels: [{ id: "C001" }], // Same channel as agent1
+          channels: [{ id: "C001", mode: "mention" as const, context_messages: 10 }], // Same channel as agent1
         })
       );
       const ctx = createMockContext(config);
@@ -639,11 +639,11 @@ describe("SlackManager (mocked @herdctl/slack)", () => {
       const config = createConfigWithAgents(
         createSlackAgent("agent1", {
           ...defaultSlackConfig,
-          channels: [{ id: "C001" }],
+          channels: [{ id: "C001", mode: "mention" as const, context_messages: 10 }],
         }),
         createSlackAgent("agent2", {
           ...defaultSlackConfig,
-          channels: [{ id: "C002" }],
+          channels: [{ id: "C002", mode: "mention" as const, context_messages: 10 }],
         }),
         createNonSlackAgent("agent3")
       );
@@ -845,19 +845,18 @@ describe("SlackManager (mocked @herdctl/slack)", () => {
       await manager.initialize();
       await manager.start();
 
-      // Simulate error from connector
+      // Simulate error from connector (no agentName — connector is shared)
       mockConnector.emit("error", {
-        agentName: "agent1",
         error: new Error("Socket closed"),
       });
 
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining("Slack connector error for agent 'agent1'")
+        expect.stringContaining("Slack connector error for agent 'slack'")
       );
       expect(emitter.emit).toHaveBeenCalledWith(
         "slack:error",
         expect.objectContaining({
-          agentName: "agent1",
+          agentName: "slack",
           error: "Socket closed",
         })
       );
@@ -1224,12 +1223,11 @@ describe("SlackManager (mocked @herdctl/slack)", () => {
 
       // Simulate non-Error (string) error from connector
       mockConnector.emit("error", {
-        agentName: "agent1",
         error: "string error",
       });
 
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining("Slack connector error for agent 'agent1': string error")
+        expect.stringContaining("Slack connector error for agent 'slack': string error")
       );
     });
 

@@ -38,6 +38,7 @@ export type {
   SlackConnectorLogger,
   SlackMessageEvent,
   SlackErrorEvent,
+  SlackChannelConfig,
   ISlackConnector,
   ISlackSessionManager,
   SlackConnectorEventMap,
