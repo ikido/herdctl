@@ -62,51 +62,24 @@ export interface ContextAttachment {
 // Markdown to mrkdwn Conversion
 // =============================================================================
 
+import { slackifyMarkdown } from "slackify-markdown";
+
 /**
  * Convert standard markdown to Slack's mrkdwn format
  *
- * Conversions:
- * - **bold** → *bold*
- * - [text](url) → <url|text>
- * - Code blocks: backticks work the same in both formats
- * - _italic_ stays _italic_ (same in mrkdwn)
+ * Uses slackify-markdown (Unified/Remark-based AST parser) for robust
+ * conversion that handles edge cases regex approaches miss.
  */
 export function markdownToMrkdwn(text: string): string {
-  let result = text;
-
-  // Convert bold: **text** → *text*
-  // Be careful not to convert content inside code blocks
-  result = convertOutsideCodeBlocks(result, (segment) => {
-    return segment.replace(/\*\*(.+?)\*\*/g, "*$1*");
-  });
-
-  // Convert links: [text](url) → <url|text>
-  result = convertOutsideCodeBlocks(result, (segment) => {
-    return segment.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<$2|$1>");
-  });
-
-  return result;
-}
-
-/**
- * Apply a transformation function only to text segments outside code blocks
- */
-function convertOutsideCodeBlocks(
-  text: string,
-  transform: (segment: string) => string
-): string {
-  // Split on code blocks (``` ... ```)
-  const parts = text.split(/(```[\s\S]*?```|`[^`]+`)/);
-
-  return parts
-    .map((part, index) => {
-      // Odd indices are code blocks — don't transform
-      if (index % 2 === 1) {
-        return part;
-      }
-      return transform(part);
-    })
-    .join("");
+  if (!text) return text;
+  return (
+    slackifyMarkdown(text)
+      // Strip zero-width spaces — Slack's mrkdwn parser doesn't handle them
+      .replace(/\u200B/g, "")
+      // Replace *** horizontal rules (Slack shows them as literal asterisks)
+      .replace(/^\*\*\*$/gm, "⸻")
+      .trimEnd()
+  );
 }
 
 // =============================================================================

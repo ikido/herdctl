@@ -407,6 +407,31 @@ describe("SlackConnector registerEventHandlers", () => {
         text: "hi back!",
       });
     });
+
+    it("converts markdown to mrkdwn in replies", async () => {
+      const { connector, handlers, say } = createTestConnector({
+        channelConfigs: new Map([[CHANNEL_ID, { mode: "auto", contextMessages: 10 }]]),
+      });
+      const messages = captureMessages(connector);
+
+      await handlers["event:message"]({
+        event: {
+          type: "message",
+          user: "UUSER1",
+          text: "hello",
+          ts: "1707930002.000001",
+          channel: CHANNEL_ID,
+        },
+        say,
+      });
+
+      await messages[0].reply("**bold** and [link](https://example.com)");
+
+      const sentText = say.mock.calls[say.mock.calls.length - 1][0].text;
+      expect(sentText).toContain("*bold*");
+      expect(sentText).not.toContain("**bold**");
+      expect(sentText).toContain("<https://example.com|link>");
+    });
   });
 
   describe("event handler registration", () => {

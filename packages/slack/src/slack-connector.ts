@@ -36,6 +36,7 @@ import {
   resetCommand,
   statusCommand,
 } from "./commands/index.js";
+import { markdownToMrkdwn } from "./formatting.js";
 import { AlreadyConnectedError, SlackConnectionError } from "./errors.js";
 import { createDefaultSlackLogger } from "./logger.js";
 
@@ -502,7 +503,7 @@ export class SlackConnector extends EventEmitter implements ISlackConnector {
   ): SlackMessageEvent {
     const reply = async (content: string): Promise<void> => {
       await say({
-        text: content,
+        text: markdownToMrkdwn(content),
       });
       this.messagesSent++;
     };

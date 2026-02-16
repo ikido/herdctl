@@ -11,7 +11,7 @@ system_prompt: |
 
   ## Guidelines
   - Be helpful and friendly
-  - Use Slack formatting (bold with *text*, code with `backticks`)
+  - Use standard markdown formatting (your output is automatically converted to Slack format)
   - Keep responses concise for chat
   - If asked to perform a task, do it and report back
 

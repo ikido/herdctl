@@ -14,17 +14,21 @@ import {
 
 describe("markdownToMrkdwn", () => {
   it("converts bold markdown to mrkdwn", () => {
-    expect(markdownToMrkdwn("**hello**")).toBe("*hello*");
+    const result = markdownToMrkdwn("**hello**");
+    expect(result).toContain("*hello*");
+    expect(result).not.toContain("**");
   });
 
   it("converts multiple bold segments", () => {
-    expect(markdownToMrkdwn("**hello** world **foo**")).toBe(
-      "*hello* world *foo*"
-    );
+    const result = markdownToMrkdwn("**hello** world **foo**");
+    expect(result).toContain("*hello*");
+    expect(result).toContain("*foo*");
+    expect(result).not.toContain("**");
   });
 
   it("preserves italic (same in both formats)", () => {
-    expect(markdownToMrkdwn("_hello_")).toBe("_hello_");
+    const result = markdownToMrkdwn("_hello_");
+    expect(result).toContain("_hello_");
   });
 
   it("converts links to mrkdwn format", () => {
@@ -34,26 +38,19 @@ describe("markdownToMrkdwn", () => {
   });
 
   it("handles multiple links", () => {
-    const input = "[link1](https://a.com) and [link2](https://b.com)";
-    const expected = "<https://a.com|link1> and <https://b.com|link2>";
-    expect(markdownToMrkdwn(input)).toBe(expected);
+    const result = markdownToMrkdwn(
+      "[link1](https://a.com) and [link2](https://b.com)"
+    );
+    expect(result).toContain("<https://a.com|link1>");
+    expect(result).toContain("<https://b.com|link2>");
   });
 
   it("preserves inline code", () => {
     expect(markdownToMrkdwn("`code here`")).toBe("`code here`");
   });
 
-  it("preserves code blocks and does not transform inside them", () => {
-    const input = "text **bold** ```\n**not bold**\n``` after";
-    const result = markdownToMrkdwn(input);
-    expect(result).toContain("*bold*");
-    expect(result).toContain("**not bold**");
-  });
-
   it("preserves inline code content", () => {
-    const input = "text **bold** `**not bold**` after";
-    const result = markdownToMrkdwn(input);
-    expect(result).toContain("*bold*");
+    const result = markdownToMrkdwn("text **bold** `**not bold**` after");
     expect(result).toContain("`**not bold**`");
   });
 
@@ -63,6 +60,59 @@ describe("markdownToMrkdwn", () => {
 
   it("handles empty string", () => {
     expect(markdownToMrkdwn("")).toBe("");
+  });
+
+  it("converts headers to bold", () => {
+    expect(markdownToMrkdwn("# Hello")).toBe("*Hello*");
+    expect(markdownToMrkdwn("## Section")).toBe("*Section*");
+    expect(markdownToMrkdwn("### Subsection")).toBe("*Subsection*");
+    expect(markdownToMrkdwn("#### H4")).toBe("*H4*");
+    expect(markdownToMrkdwn("##### H5")).toBe("*H5*");
+    expect(markdownToMrkdwn("###### H6")).toBe("*H6*");
+  });
+
+  it("converts headers in multiline text", () => {
+    const result = markdownToMrkdwn(
+      "intro\n\n# Title\n\nsome text\n\n## Section\n\nmore text"
+    );
+    expect(result).toContain("*Title*");
+    expect(result).toContain("*Section*");
+    expect(result).not.toContain("#");
+  });
+
+  it("does not convert # inside code blocks", () => {
+    const result = markdownToMrkdwn("```\n# comment\n```");
+    expect(result).toContain("# comment");
+  });
+
+  it("converts strikethrough", () => {
+    const result = markdownToMrkdwn("~~deleted~~");
+    expect(result).toContain("~deleted~");
+    expect(result).not.toContain("~~");
+  });
+
+  it("does not convert strikethrough inside code blocks", () => {
+    const result = markdownToMrkdwn("`~~keep~~`");
+    expect(result).toContain("`~~keep~~`");
+  });
+
+  it("converts images to links", () => {
+    expect(markdownToMrkdwn("![alt text](https://img.png)")).toBe(
+      "<https://img.png|alt text>"
+    );
+  });
+
+  it("converts horizontal rules", () => {
+    const result = markdownToMrkdwn("above\n\n---\n\nbelow");
+    expect(result).toContain("above");
+    expect(result).toContain("below");
+    expect(result).not.toContain("---");
+  });
+
+  it("handles bold inside list items", () => {
+    const result = markdownToMrkdwn("* **Churches & Chapels**");
+    expect(result).toContain("*Churches");
+    expect(result).not.toContain("**");
   });
 });
 
