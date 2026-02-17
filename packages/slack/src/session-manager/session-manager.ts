@@ -158,6 +158,8 @@ export class SessionManager implements ISessionManager {
    * Get an existing session without creating one
    */
   async getSession(channelId: string): Promise<ChannelSession | null> {
+    // Force reload from disk to get latest data
+    this.state = null;
     const state = await this.loadState();
     const session = state.channels[channelId];
 
