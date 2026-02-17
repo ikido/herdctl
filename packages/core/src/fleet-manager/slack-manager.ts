@@ -127,6 +127,15 @@ interface ISlackSessionManager {
   clearSession(channelId: string): Promise<boolean>;
   cleanupExpiredSessions(): Promise<number>;
   getActiveSessionCount(): Promise<number>;
+  updateContextUsage(
+    channelId: string,
+    usage: { inputTokens: number; outputTokens: number; contextWindow: number }
+  ): Promise<void>;
+  incrementMessageCount(channelId: string): Promise<void>;
+  setAgentConfig(
+    channelId: string,
+    config: { model: string; permissionMode: string; mcpServers: string[] }
+  ): Promise<void>;
 }
 
 /**
@@ -644,11 +653,18 @@ export class SlackManager {
         resume: existingSessionId,
         injectedMcpServers,
         onMessage: async (message) => {
-          // Track context usage from assistant messages
-          if (message.type === "assistant" && sessionManager) {
+          // Log message type for debugging
+          logger.debug(`Received message type: ${message.type}`, { type: message.type });
+
+          // Track context usage from assistant or result messages
+          const shouldTrackUsage = (message.type === "assistant" || message.type === "result") && sessionManager;
+
+          if (shouldTrackUsage) {
             // Extract usage data from SDK message
             const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number; contextWindow?: number } }).usage;
             const contextWindow = (message as { contextWindow?: number }).contextWindow;
+
+            logger.debug(`Usage data:`, { usage, contextWindow });
 
             if (usage && (usage.input_tokens || usage.output_tokens)) {
               try {
@@ -657,21 +673,27 @@ export class SlackManager {
                   outputTokens: usage.output_tokens ?? 0,
                   contextWindow: contextWindow ?? usage.contextWindow ?? 200000, // Default to 200k
                 });
+                logger.debug(`Updated context usage successfully`);
               } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 logger.warn(`Failed to update context usage: ${errorMessage}`);
               }
             }
 
-            // Increment message count
-            try {
-              await sessionManager.incrementMessageCount(event.metadata.channelId);
-            } catch (error) {
-              const errorMessage = error instanceof Error ? error.message : String(error);
-              logger.warn(`Failed to increment message count: ${errorMessage}`);
+            // Increment message count for assistant messages only (not result)
+            if (message.type === "assistant") {
+              try {
+                await sessionManager.incrementMessageCount(event.metadata.channelId);
+                logger.debug(`Incremented message count`);
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                logger.warn(`Failed to increment message count: ${errorMessage}`);
+              }
             }
+          }
 
-            // Send content to Slack
+          // Send content to Slack for assistant messages
+          if (message.type === "assistant") {
             const content = this.extractMessageContent(message);
             if (content) {
               await streamer.addMessageAndSend(content);
