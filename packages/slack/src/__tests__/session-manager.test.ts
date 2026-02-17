@@ -231,7 +231,7 @@ describe("SessionManager", () => {
       );
       const content = await readFile(filePath, "utf-8");
 
-      expect(content).toContain("version: 2");
+      expect(content).toContain("version: 3");
       expect(content).toContain("agentName: test-agent");
       expect(content).toContain("C0123456789");
     });
@@ -255,7 +255,7 @@ describe("Session manager types", () => {
     it("creates state with empty channels", () => {
       const state = createInitialSessionState("my-agent");
 
-      expect(state.version).toBe(2);
+      expect(state.version).toBe(3);
       expect(state.agentName).toBe("my-agent");
       expect(state.channels).toEqual({});
     });
@@ -266,7 +266,9 @@ describe("Session manager types", () => {
       const session = createChannelSession("session-123");
 
       expect(session.sessionId).toBe("session-123");
+      expect(session.sessionStartedAt).toBeDefined();
       expect(session.lastMessageAt).toBeDefined();
+      expect(session.messageCount).toBe(0);
     });
   });
 });

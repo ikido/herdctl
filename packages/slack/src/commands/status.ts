@@ -1,8 +1,13 @@
 /**
- * !status command — Show agent status and connection info
+ * !status command — Show agent status, connection info, and context window usage
  */
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { PrefixCommand, CommandContext } from "./command-handler.js";
+import type { ChannelSessionV3 } from "../session-manager/types.js";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Format a timestamp for display
@@ -44,6 +49,13 @@ function formatDuration(isoString: string | null): string {
 }
 
 /**
+ * Format number with thousand separators
+ */
+function formatNumber(num: number): string {
+  return num.toLocaleString();
+}
+
+/**
  * Get status emoji based on connection status
  */
 function getStatusEmoji(status: string): string {
@@ -63,9 +75,36 @@ function getStatusEmoji(status: string): string {
   }
 }
 
+/**
+ * Get context usage emoji based on percentage used
+ */
+function getContextUsageEmoji(percentUsed: number): string {
+  if (percentUsed >= 95) {
+    return "\u{1F6A8}"; // Police car light (critical)
+  }
+  if (percentUsed >= 90) {
+    return "\u26A0\uFE0F"; // Warning sign
+  }
+  if (percentUsed >= 75) {
+    return "\u2139\uFE0F"; // Information
+  }
+  return "\u{1F4CA}"; // Bar chart (normal)
+}
+
+/**
+ * Check if session is v3 format
+ */
+function isSessionV3(session: unknown): session is ChannelSessionV3 {
+  return (
+    typeof session === "object" &&
+    session !== null &&
+    "sessionStartedAt" in session
+  );
+}
+
 export const statusCommand: PrefixCommand = {
   name: "status",
-  description: "Show agent status and connection info",
+  description: "Show agent status, session info, and context window usage",
 
   async execute(context: CommandContext): Promise<void> {
     const { agentName, channelId, connectorState, sessionManager, reply } =
@@ -74,35 +113,90 @@ export const statusCommand: PrefixCommand = {
     // Get session info for this channel
     const session = await sessionManager.getSession(channelId);
 
-    // Build status message using Slack mrkdwn
+    if (!session) {
+      await reply("No active session in this channel. Start a conversation to create a session!");
+      return;
+    }
+
+    // Build comprehensive status message
+    let statusMessage = `📊 *${agentName} Status*\n\n`;
+
+    // ===========================================================================
+    // 1. Connection Status
+    // ===========================================================================
     const statusEmoji = getStatusEmoji(connectorState.status);
     const botUsername = connectorState.botUser?.username ?? "Unknown";
 
-    let statusMessage = `*${agentName} Status*\n\n`;
-    statusMessage += `${statusEmoji} *Connection:* ${connectorState.status}\n`;
-    statusMessage += `*Bot:* ${botUsername}`;
+    statusMessage += `*Connection*\n`;
+    statusMessage += `${statusEmoji} ${connectorState.status}\n`;
+    statusMessage += `Bot: ${botUsername}`;
 
     if (connectorState.connectedAt) {
-      statusMessage += `\n*Connected:* ${formatTimestamp(connectorState.connectedAt)}`;
-      statusMessage += `\n*Uptime:* ${formatDuration(connectorState.connectedAt)}`;
+      statusMessage += `\nUptime: ${formatDuration(connectorState.connectedAt)}`;
     }
 
     if (connectorState.reconnectAttempts > 0) {
-      statusMessage += `\n*Reconnect Attempts:* ${connectorState.reconnectAttempts}`;
+      statusMessage += `\nReconnect Attempts: ${connectorState.reconnectAttempts}`;
     }
 
     if (connectorState.lastError) {
-      statusMessage += `\n*Last Error:* ${connectorState.lastError}`;
+      statusMessage += `\nLast Error: ${connectorState.lastError}`;
     }
 
-    // Session info
-    statusMessage += `\n\n*Session Info*`;
-    if (session) {
-      statusMessage += `\n*Session ID:* \`${session.sessionId.substring(0, 20)}...\``;
-      statusMessage += `\n*Last Activity:* ${formatTimestamp(session.lastMessageAt)}`;
-      statusMessage += `\n*Session Age:* ${formatDuration(session.lastMessageAt)}`;
+    // ===========================================================================
+    // 2. Session Info (Enhanced for v3)
+    // ===========================================================================
+    statusMessage += `\n\n*Session*\n`;
+    statusMessage += `ID: \`${session.sessionId.substring(0, 20)}...\`\n`;
+
+    if (isSessionV3(session)) {
+      // v3 session with enhanced fields
+      statusMessage += `Started: ${formatTimestamp(session.sessionStartedAt)}\n`;
+      statusMessage += `Duration: ${formatDuration(session.sessionStartedAt)}\n`;
+      statusMessage += `Messages: ${session.messageCount}`;
     } else {
-      statusMessage += `\nNo active session in this channel.`;
+      // v2 session (legacy)
+      statusMessage += `Last Activity: ${formatTimestamp(session.lastMessageAt)}`;
+    }
+
+    // ===========================================================================
+    // 3. Context Window (v3 only)
+    // ===========================================================================
+    if (isSessionV3(session) && session.contextUsage) {
+      const { totalTokens, contextWindow, lastUpdated } = session.contextUsage;
+      const percentUsed = Math.round((totalTokens / contextWindow) * 100);
+      const percentRemaining = 100 - percentUsed;
+      const usageEmoji = getContextUsageEmoji(percentUsed);
+
+      statusMessage += `\n\n*Context Window*\n`;
+      statusMessage += `${usageEmoji} ${formatNumber(totalTokens)} / ${formatNumber(contextWindow)} tokens\n`;
+      statusMessage += `${percentRemaining}% remaining`;
+
+      // Add warnings based on usage
+      if (percentUsed >= 95) {
+        statusMessage += `\n\n⚠️ *CRITICAL:* Context window nearly full! Auto-compact will trigger soon.\nConsider starting a new session with \`!reset\`.`;
+      } else if (percentUsed >= 90) {
+        statusMessage += `\n\n⚠️ *WARNING:* Approaching context limit.\nConsider wrapping up or starting a new session soon.`;
+      } else if (percentUsed >= 75) {
+        statusMessage += `\n\nℹ️ Context filling up. Still plenty of room, but monitor usage.`;
+      }
+
+      statusMessage += `\n\nLast updated: ${formatTimestamp(lastUpdated)}`;
+    }
+
+    // ===========================================================================
+    // 4. Agent Configuration (v3 only)
+    // ===========================================================================
+    if (isSessionV3(session) && session.agentConfig) {
+      const { model, permissionMode, mcpServers } = session.agentConfig;
+
+      statusMessage += `\n\n*Configuration*\n`;
+      statusMessage += `Model: ${model}\n`;
+      statusMessage += `Permissions: ${permissionMode}`;
+
+      if (mcpServers.length > 0) {
+        statusMessage += `\nMCP Servers: ${mcpServers.join(", ")}`;
+      }
     }
 
     await reply(statusMessage);

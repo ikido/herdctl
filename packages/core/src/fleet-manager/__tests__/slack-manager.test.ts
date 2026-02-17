@@ -133,6 +133,9 @@ function createMockSessionManager(agentName: string) {
     clearSession: vi.fn().mockResolvedValue(true),
     cleanupExpiredSessions: vi.fn().mockResolvedValue(0),
     getActiveSessionCount: vi.fn().mockResolvedValue(0),
+    updateContextUsage: vi.fn().mockResolvedValue(undefined),
+    incrementMessageCount: vi.fn().mockResolvedValue(undefined),
+    setAgentConfig: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -1093,6 +1096,10 @@ describe("SlackManager (mocked @herdctl/slack)", () => {
 
     it("resumes existing session when one exists", async () => {
       const mockSessionMgr = createMockSessionManager("agent1");
+      mockSessionMgr.getOrCreateSession.mockResolvedValue({
+        sessionId: "existing-session-456",
+        isNew: false,
+      });
       mockSessionMgr.getSession.mockResolvedValue({
         sessionId: "existing-session-456",
         lastMessageAt: "2026-02-15T10:00:00Z",
@@ -1150,6 +1157,15 @@ describe("SlackManager (mocked @herdctl/slack)", () => {
       expect(mockSessionMgr.setSession).toHaveBeenCalledWith(
         "C0123456789",
         "new-session-789"
+      );
+
+      // Should set agent config for resumed session
+      expect(mockSessionMgr.setAgentConfig).toHaveBeenCalledWith(
+        "C0123456789",
+        expect.objectContaining({
+          model: expect.any(String),
+          permissionMode: expect.any(String),
+        })
       );
     });
 

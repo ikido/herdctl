@@ -127,6 +127,15 @@ interface ISlackSessionManager {
   clearSession(channelId: string): Promise<boolean>;
   cleanupExpiredSessions(): Promise<number>;
   getActiveSessionCount(): Promise<number>;
+  updateContextUsage(
+    channelId: string,
+    usage: { inputTokens: number; outputTokens: number; contextWindow: number }
+  ): Promise<void>;
+  incrementMessageCount(channelId: string): Promise<void>;
+  setAgentConfig(
+    channelId: string,
+    config: { model: string; permissionMode: string; mcpServers: string[] }
+  ): Promise<void>;
 }
 
 /**
@@ -560,9 +569,12 @@ export class SlackManager {
     let existingSessionId: string | null = null;
     if (sessionManager) {
       try {
-        const existingSession = await sessionManager.getSession(event.metadata.channelId);
-        if (existingSession) {
-          existingSessionId = existingSession.sessionId;
+        // Get or create session BEFORE triggering agent
+        // This ensures the session exists in SessionManager when onMessage callbacks fire
+        const sessionResult = await sessionManager.getOrCreateSession(event.metadata.channelId);
+        existingSessionId = sessionResult.isNew ? null : sessionResult.sessionId;
+
+        if (existingSessionId) {
           logger.debug(`Resuming session for channel ${event.metadata.channelId}: ${existingSessionId}`);
           emitter.emit("slack:session:lifecycle", {
             agentName,
@@ -571,11 +583,17 @@ export class SlackManager {
             sessionId: existingSessionId,
           });
         } else {
-          logger.debug(`No existing session for channel ${event.metadata.channelId}, starting new conversation`);
+          logger.debug(`Created new session for channel ${event.metadata.channelId}: ${sessionResult.sessionId}`);
+          emitter.emit("slack:session:lifecycle", {
+            agentName,
+            event: "created",
+            channelId: event.metadata.channelId,
+            sessionId: sessionResult.sessionId,
+          });
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.warn(`Failed to get session: ${errorMessage}`);
+        logger.warn(`Failed to get or create session: ${errorMessage}`);
       }
     }
 
@@ -625,11 +643,69 @@ export class SlackManager {
         ) => Promise<import("./types.js").TriggerResult>;
       };
 
+      // Set agent config snapshot on every request (captures config changes)
+      if (sessionManager) {
+        try {
+          await sessionManager.setAgentConfig(event.metadata.channelId, {
+            model: agent.model ?? "claude-sonnet-4",
+            permissionMode: agent.permission_mode ?? "default",
+            mcpServers: agent.mcp_servers ? Object.keys(agent.mcp_servers) : [],
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.warn(`Failed to set agent config: ${errorMessage}`);
+        }
+      }
+
       const result = await fleetManager.trigger(agentName, undefined, {
         prompt: event.prompt,
         resume: existingSessionId,
         injectedMcpServers,
         onMessage: async (message) => {
+          // Log message type for debugging (use info so it shows in logs)
+          logger.info(`[Context Tracking] Received message type: ${message.type}`);
+
+          // Track context usage from assistant or result messages
+          const shouldTrackUsage = (message.type === "assistant" || message.type === "result") && sessionManager;
+
+          if (shouldTrackUsage) {
+            // Extract usage data from SDK message
+            const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number; contextWindow?: number } }).usage;
+            const contextWindow = (message as { contextWindow?: number }).contextWindow;
+
+            logger.info(`[Context Tracking] Usage data: ${JSON.stringify({ hasUsage: !!usage, inputTokens: usage?.input_tokens, outputTokens: usage?.output_tokens, contextWindow: contextWindow ?? usage?.contextWindow })}`);
+
+            if (usage && (usage.input_tokens || usage.output_tokens)) {
+              try {
+                await sessionManager.updateContextUsage(event.metadata.channelId, {
+                  inputTokens: usage.input_tokens ?? 0,
+                  outputTokens: usage.output_tokens ?? 0,
+                  contextWindow: contextWindow ?? usage.contextWindow ?? 200000, // Default to 200k
+                });
+                logger.info(`[Context Tracking] ✓ Updated context usage successfully`);
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                logger.warn(`[Context Tracking] Failed to update context usage: ${errorMessage}`);
+              }
+            } else {
+              logger.info(`[Context Tracking] No usage data in message`);
+            }
+
+            // Increment message count for assistant messages only (not result)
+            if (message.type === "assistant") {
+              try {
+                await sessionManager.incrementMessageCount(event.metadata.channelId);
+                logger.info(`[Context Tracking] ✓ Incremented message count`);
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                logger.warn(`[Context Tracking] Failed to increment message count: ${errorMessage}`);
+              }
+            }
+          } else {
+            logger.info(`[Context Tracking] Skipping - not tracking (type=${message.type}, hasManager=${!!sessionManager})`);
+          }
+
+          // Send content to Slack for assistant messages
           if (message.type === "assistant") {
             const content = this.extractMessageContent(message);
             if (content) {
