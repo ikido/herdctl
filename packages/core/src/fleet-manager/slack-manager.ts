@@ -653,8 +653,8 @@ export class SlackManager {
         resume: existingSessionId,
         injectedMcpServers,
         onMessage: async (message) => {
-          // Log message type for debugging
-          logger.debug(`Received message type: ${message.type}`, { type: message.type });
+          // Log message type for debugging (use info so it shows in logs)
+          logger.info(`[Context Tracking] Received message type: ${message.type}`);
 
           // Track context usage from assistant or result messages
           const shouldTrackUsage = (message.type === "assistant" || message.type === "result") && sessionManager;
@@ -664,7 +664,12 @@ export class SlackManager {
             const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number; contextWindow?: number } }).usage;
             const contextWindow = (message as { contextWindow?: number }).contextWindow;
 
-            logger.debug(`Usage data:`, { usage, contextWindow });
+            logger.info(`[Context Tracking] Usage data:`, {
+              hasUsage: !!usage,
+              inputTokens: usage?.input_tokens,
+              outputTokens: usage?.output_tokens,
+              contextWindow: contextWindow ?? usage?.contextWindow
+            });
 
             if (usage && (usage.input_tokens || usage.output_tokens)) {
               try {
@@ -673,23 +678,27 @@ export class SlackManager {
                   outputTokens: usage.output_tokens ?? 0,
                   contextWindow: contextWindow ?? usage.contextWindow ?? 200000, // Default to 200k
                 });
-                logger.debug(`Updated context usage successfully`);
+                logger.info(`[Context Tracking] ✓ Updated context usage successfully`);
               } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
-                logger.warn(`Failed to update context usage: ${errorMessage}`);
+                logger.warn(`[Context Tracking] Failed to update context usage: ${errorMessage}`);
               }
+            } else {
+              logger.info(`[Context Tracking] No usage data in message`);
             }
 
             // Increment message count for assistant messages only (not result)
             if (message.type === "assistant") {
               try {
                 await sessionManager.incrementMessageCount(event.metadata.channelId);
-                logger.debug(`Incremented message count`);
+                logger.info(`[Context Tracking] ✓ Incremented message count`);
               } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
-                logger.warn(`Failed to increment message count: ${errorMessage}`);
+                logger.warn(`[Context Tracking] Failed to increment message count: ${errorMessage}`);
               }
             }
+          } else {
+            logger.info(`[Context Tracking] Skipping - not tracking (type=${message.type}, hasManager=${!!sessionManager})`);
           }
 
           // Send content to Slack for assistant messages
