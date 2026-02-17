@@ -569,9 +569,12 @@ export class SlackManager {
     let existingSessionId: string | null = null;
     if (sessionManager) {
       try {
-        const existingSession = await sessionManager.getSession(event.metadata.channelId);
-        if (existingSession) {
-          existingSessionId = existingSession.sessionId;
+        // Get or create session BEFORE triggering agent
+        // This ensures the session exists in SessionManager when onMessage callbacks fire
+        const sessionResult = await sessionManager.getOrCreateSession(event.metadata.channelId);
+        existingSessionId = sessionResult.isNew ? undefined : sessionResult.sessionId;
+
+        if (existingSessionId) {
           logger.debug(`Resuming session for channel ${event.metadata.channelId}: ${existingSessionId}`);
           emitter.emit("slack:session:lifecycle", {
             agentName,
@@ -580,11 +583,17 @@ export class SlackManager {
             sessionId: existingSessionId,
           });
         } else {
-          logger.debug(`No existing session for channel ${event.metadata.channelId}, starting new conversation`);
+          logger.debug(`Created new session for channel ${event.metadata.channelId}: ${sessionResult.sessionId}`);
+          emitter.emit("slack:session:lifecycle", {
+            agentName,
+            event: "created",
+            channelId: event.metadata.channelId,
+            sessionId: sessionResult.sessionId,
+          });
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.warn(`Failed to get session: ${errorMessage}`);
+        logger.warn(`Failed to get or create session: ${errorMessage}`);
       }
     }
 
@@ -664,12 +673,7 @@ export class SlackManager {
             const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number; contextWindow?: number } }).usage;
             const contextWindow = (message as { contextWindow?: number }).contextWindow;
 
-            logger.info(`[Context Tracking] Usage data:`, {
-              hasUsage: !!usage,
-              inputTokens: usage?.input_tokens,
-              outputTokens: usage?.output_tokens,
-              contextWindow: contextWindow ?? usage?.contextWindow
-            });
+            logger.info(`[Context Tracking] Usage data: ${JSON.stringify({ hasUsage: !!usage, inputTokens: usage?.input_tokens, outputTokens: usage?.output_tokens, contextWindow: contextWindow ?? usage?.contextWindow })}`);
 
             if (usage && (usage.input_tokens || usage.output_tokens)) {
               try {
