@@ -37,16 +37,17 @@ This follows the **shared connector pattern** (like Slack) where a single Linear
 
 **Rationale**:
 - Linear API has **rate limits per API key** (not per-team/issue)
-- Shared connector = single API client, centralized rate limit management
+- Shared connector = single webhook server, centralized event processing
 - Issue→agent routing similar to Slack's channel→agent routing
+- **Same agent accessible on both Slack and Linear** (multi-connector support)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    LinearManager                        │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │         LinearConnector (shared)                  │  │
-│  │  - Single Linear API client                       │  │
-│  │  - Polling loop (30s) for new comments            │  │
+│  │  - Webhook server (primary)                       │  │
+│  │  - Polling fallback                               │  │
 │  │  - Issue→agent routing map                        │  │
 │  └──────────────────────────────────────────────────┘  │
 │                                                          │
@@ -56,10 +57,39 @@ This follows the **shared connector pattern** (like Slack) where a single Linear
 │  └──────────────┘  └──────────────┘  └──────────────┘ │
 │                                                          │
 │  issueAgentMap: Map<issueId, agentName>                │
-│  - ENG-123 → backend-agent                             │
+│  - ENG-123 → backend-agent (also in #herdctl-dev)     │
 │  - ENG-456 → frontend-agent                            │
 └─────────────────────────────────────────────────────────┘
 ```
+
+### Multi-Connector Agent Support
+
+Agents can be accessible via multiple connectors simultaneously:
+
+```yaml
+# Agent config - accessible on both Slack and Linear
+name: backend-agent
+description: Handles backend issues
+
+chat:
+  slack:
+    channels:
+      - id: "C1234567890"
+        name: "#herdctl-dev"
+        mode: auto
+
+  linear:
+    teams:
+      - id: "team-123"
+        labels: ["backend"]
+        states: ["Todo", "In Progress"]
+```
+
+**Session Isolation**: Each connector maintains its own session storage:
+- Slack sessions: `.herdctl/slack-sessions/backend-agent.yaml`
+- Linear sessions: `.herdctl/linear-sessions/backend-agent.yaml`
+
+**Future**: Cross-connector session sharing (out of scope for MVP)
 
 ---
 
@@ -98,15 +128,21 @@ issues:
 ### 2. Comments = Messages
 
 - **User comments** trigger agent responses
-- **Agent comments** are created via `linear.createComment()`
+- **Agent comments** are created via Linear MCP server in agent's container
 - **Self-created comments** are filtered out (using Linear `viewer.id`)
+- **Comment updates** are debounced and marked with emoji reaction (no re-trigger)
 
 ### 3. Conversation Context
 
 On each comment, agent receives:
 1. **Issue description** (the original task/problem)
-2. **Recent comments** (default: last 10, configurable)
+2. **All previous comments** in the session (no limit)
 3. **Issue metadata** (state, assignee, labels, priority)
+
+Context window management is handled by herdctl's existing compacting logic:
+- New messages go into existing session
+- SDK auto-compact triggers at ~95% context usage
+- No need for manual comment truncation
 
 ```typescript
 const context = [
@@ -114,7 +150,7 @@ const context = [
     role: "user",
     content: `Issue: ${issue.title}\n\n${issue.description}`
   },
-  ...recentComments.map(comment => ({
+  ...allComments.map(comment => ({
     role: comment.user.id === botUserId ? "assistant" : "user",
     content: comment.body
   }))
@@ -132,11 +168,15 @@ const context = [
 name: backend-agent
 description: Handles backend issues in Linear
 
+# Linear MCP server passed to container
+mcp_servers:
+  linear:
+    url: http://linear-mcp:8080/mcp  # Linear MCP in Docker network
+    env:
+      LINEAR_API_KEY: ${LINEAR_API_KEY}  # Passed from host env
+
 chat:
   linear:
-    # Authentication
-    api_key_env: LINEAR_API_KEY  # Environment variable name
-
     # Session configuration
     session_expiry_hours: 168  # 7 days (default)
     log_level: standard         # or "verbose"
@@ -153,37 +193,71 @@ chat:
 
         # Comment handling
         comment_mode: "auto"       # Respond to all comments (vs "mention")
-        context_comments: 10       # How many past comments to include
+        comment_update_debounce: 5s  # Ignore updates within 5s
         include_issue_description: true
 
-    # Polling configuration (webhooks come later)
-    poll_interval: 30s  # How often to check for new comments
+    # Webhook configuration (primary)
+    webhook:
+      enabled: true
+      port: 3000                   # Webhook server port
+      secret_env: LINEAR_WEBHOOK_SECRET  # Signature verification
+
+    # Polling fallback (if webhook fails)
+    poll_interval: 60s  # Fallback polling interval
+    poll_enabled: false  # Disable polling when webhooks work
 
     # Output configuration
     output:
       issue_updates: true          # Post when issue state changes
       comment_previews: true       # Show comment previews in logs
-      comment_max_length: 500      # Truncate long comments in logs
       system_status: true          # Post "Processing..." indicators
       errors: true                 # Post error messages as comments
 ```
 
+### Linear MCP Integration
+
+Agents interact with Linear via the Linear MCP server running in their container:
+
+```yaml
+# docker-compose.yml (in herdctl deployment)
+services:
+  linear-mcp:
+    image: linear-mcp:latest
+    networks:
+      - herdctl-net
+    environment:
+      LINEAR_API_KEY: ${LINEAR_API_KEY}
+    ports:
+      - "8080:8080"
+```
+
+Agents use Linear MCP tools for:
+- Creating/updating comments
+- Changing issue state
+- Creating sub-issues
+- Updating issue fields (assignee, priority, labels)
+
+**No API key in connector code** - all Linear operations via MCP in agent container.
+
 ### Multiple Agents Example
 
 ```yaml
-# Agent 1: Backend issues
+# Agent 1: Backend issues (accessible on Slack and Linear)
 chat:
+  slack:
+    channels:
+      - id: "C1234567890"
+        name: "#backend-dev"
+        mode: auto
   linear:
-    api_key_env: LINEAR_API_KEY
     teams:
       - id: "eng-team-123"
         labels: ["backend"]
         states: ["Todo", "In Progress"]
 
-# Agent 2: Frontend issues
+# Agent 2: Frontend issues (Linear only)
 chat:
   linear:
-    api_key_env: LINEAR_API_KEY
     teams:
       - id: "eng-team-123"
         labels: ["frontend"]
@@ -194,80 +268,221 @@ chat:
 
 ## Implementation Details
 
-### Phase 1: Core Connector (MVP)
+### Phase 1: Webhook-based Connector (MVP)
 
-#### 1.1 LinearConnector Class
+#### 1.1 General Webhook Trigger Layer
+
+**Location**: `packages/core/src/fleet-manager/webhook-server.ts`
+
+This is a **general-purpose webhook infrastructure** that can be reused for Linear, GitHub, and other services.
+
+```typescript
+interface WebhookServerConfig {
+  port: number;
+  routes: WebhookRoute[];
+  logger: Logger;
+}
+
+interface WebhookRoute {
+  path: string;  // e.g., "/webhooks/linear", "/webhooks/github"
+  verifySignature: (body: string, signature: string) => boolean;
+  onEvent: (event: any) => Promise<void>;
+}
+
+class WebhookServer {
+  private server: http.Server | null = null;
+
+  constructor(private config: WebhookServerConfig) {}
+
+  async start(): Promise<void> {
+    this.server = http.createServer(async (req, res) => {
+      const route = this.config.routes.find(r => r.path === req.url);
+      if (!route) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+
+      if (req.method !== "POST") {
+        res.writeHead(405);
+        res.end();
+        return;
+      }
+
+      // 1. Read body
+      const body = await this.readBody(req);
+
+      // 2. Verify signature
+      const signature = req.headers["linear-signature"] as string;
+      if (!route.verifySignature(body, signature)) {
+        this.config.logger.warn("Webhook signature verification failed");
+        res.writeHead(401);
+        res.end();
+        return;
+      }
+
+      // 3. Parse and route event
+      try {
+        const event = JSON.parse(body);
+        await route.onEvent(event);
+        res.writeHead(200);
+        res.end();
+      } catch (error) {
+        this.config.logger.error("Webhook processing error", error);
+        res.writeHead(500);
+        res.end();
+      }
+    });
+
+    await new Promise<void>((resolve) => {
+      this.server!.listen(this.config.port, () => {
+        this.config.logger.info(`Webhook server listening on port ${this.config.port}`);
+        resolve();
+      });
+    });
+  }
+
+  async stop(): Promise<void> {
+    if (this.server) {
+      await new Promise<void>((resolve) => {
+        this.server!.close(() => resolve());
+      });
+    }
+  }
+
+  private async readBody(req: http.IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let body = "";
+      req.on("data", chunk => body += chunk);
+      req.on("end", () => resolve(body));
+      req.on("error", reject);
+    });
+  }
+}
+```
+
+#### 1.2 LinearConnector Class
 
 **Location**: `packages/linear/src/linear-connector.ts`
 
 ```typescript
 interface LinearConnectorConfig {
-  apiKey: string;
-  pollInterval: number;          // milliseconds
+  webhookSecret: string;
+  apiKey: string;  // Only for reading issue data, NOT for creating comments
   issueAgentMap: Map<string, string>;
   sessionManagers: Map<string, ILinearSessionManager>;
   logger: Logger;
+
+  // Polling fallback
+  pollEnabled: boolean;
+  pollInterval: number;
 }
 
 class LinearConnector extends EventEmitter {
   private client: LinearClient;
-  private pollInterval: NodeJS.Timer | null = null;
   private botUserId: string | null = null;
   private isConnected: boolean = false;
+  private pollInterval: NodeJS.Timer | null = null;
 
-  constructor(config: LinearConnectorConfig) { }
+  // Comment update debouncing
+  private commentUpdateDebounce: Map<string, NodeJS.Timeout> = new Map();
+  private processedCommentUpdates: Set<string> = new Set();
+
+  constructor(private config: LinearConnectorConfig) {
+    super();
+    this.client = new LinearClient({ apiKey: config.apiKey });
+  }
 
   async connect(): Promise<void> {
-    // 1. Initialize Linear API client
-    // 2. Get bot user ID (viewer.id)
-    // 3. Start polling loop
-    this.pollInterval = setInterval(() => this.poll(), this.config.pollInterval);
+    // Get bot user ID for self-comment filtering
+    const viewer = await this.client.viewer;
+    this.botUserId = viewer.id;
+    this.isConnected = true;
     this.emit("ready", { botUser: this.botUserId });
+
+    // Start polling fallback if enabled
+    if (this.config.pollEnabled) {
+      this.pollInterval = setInterval(() => this.poll(), this.config.pollInterval);
+    }
   }
 
   async disconnect(): Promise<void> {
-    // Stop polling, cleanup
     if (this.pollInterval) clearInterval(this.pollInterval);
     this.isConnected = false;
     this.emit("disconnect");
   }
 
-  private async poll(): Promise<void> {
-    // For each monitored issue:
-    // 1. Fetch comments since last poll
-    // 2. Filter out self-created comments
-    // 3. Emit "message" event for each new comment
-
-    for (const [issueId, agentName] of this.config.issueAgentMap) {
-      const sessionManager = this.config.sessionManagers.get(agentName);
-      const session = await sessionManager?.getSession(issueId);
-
-      const since = session?.lastCommentAt ??
-        new Date(Date.now() - this.config.pollInterval).toISOString();
-
-      const comments = await this.fetchNewComments(issueId, since);
-
-      for (const comment of comments) {
-        if (comment.user.id !== this.botUserId) {
-          this.emit("message", {
-            agentName,
-            issueId,
-            comment,
-            metadata: { source: "linear", issueId }
-          });
-        }
-      }
+  // Called by WebhookServer when Linear webhook arrives
+  async handleWebhook(event: LinearWebhookEvent): Promise<void> {
+    if (event.type === "Comment" && event.action === "create") {
+      await this.handleCommentCreated(event.data);
+    } else if (event.type === "Comment" && event.action === "update") {
+      await this.handleCommentUpdated(event.data);
+    } else if (event.type === "Issue" && event.action === "update") {
+      // Issue state changed - log it, agent can update state via MCP
+      this.config.logger.info(`Issue ${event.data.identifier} updated: ${event.data.state.name}`);
     }
   }
 
-  private async fetchNewComments(issueId: string, since: string): Promise<Comment[]> {
-    // Use Linear API to fetch comments
-    const issue = await this.client.issue(issueId);
-    const comments = await issue.comments({
-      filter: { createdAt: { gt: since } },
-      orderBy: "createdAt"
+  private async handleCommentCreated(comment: LinearComment): Promise<void> {
+    // Filter out self-created comments
+    if (comment.user.id === this.botUserId) {
+      this.config.logger.debug(`Skipping self-created comment ${comment.id}`);
+      return;
+    }
+
+    const agentName = this.config.issueAgentMap.get(comment.issue.id);
+    if (!agentName) {
+      this.config.logger.debug(`No agent for issue ${comment.issue.id}`);
+      return;
+    }
+
+    this.emit("message", {
+      agentName,
+      issueId: comment.issue.id,
+      comment,
+      metadata: { source: "linear", issueId: comment.issue.id }
     });
-    return comments.nodes;
+  }
+
+  private async handleCommentUpdated(comment: LinearComment): Promise<void> {
+    // Debounce comment updates - ignore rapid edits
+    const existingTimeout = this.commentUpdateDebounce.get(comment.id);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+    }
+
+    this.commentUpdateDebounce.set(
+      comment.id,
+      setTimeout(() => {
+        // Add emoji reaction to indicate we saw the update
+        this.addReaction(comment.id, "eyes");
+        this.commentUpdateDebounce.delete(comment.id);
+      }, 5000) // 5s debounce
+    );
+
+    // Do NOT trigger agent on comment updates
+    this.config.logger.debug(`Comment ${comment.id} updated, debouncing...`);
+  }
+
+  private async addReaction(commentId: string, emoji: string): Promise<void> {
+    // Note: Linear API doesn't support reactions yet, placeholder for future
+    this.config.logger.debug(`Would add ${emoji} reaction to ${commentId}`);
+  }
+
+  // Polling fallback (if webhooks fail)
+  private async poll(): Promise<void> {
+    // Same logic as before, but only used as fallback
+    // Omitted for brevity
+  }
+
+  verifyWebhookSignature(body: string, signature: string): boolean {
+    const hmac = crypto.createHmac("sha256", this.config.webhookSecret);
+    const digest = hmac.update(body).digest("hex");
+    return crypto.timingSafeEqual(
+      Buffer.from(digest),
+      Buffer.from(signature)
+    );
   }
 
   // Events emitted:
@@ -278,13 +493,14 @@ class LinearConnector extends EventEmitter {
 }
 ```
 
-#### 1.2 LinearManager Class
+#### 1.3 LinearManager Class
 
 **Location**: `packages/core/src/fleet-manager/linear-manager.ts`
 
 ```typescript
 class LinearManager {
   private connector: ILinearConnector | null = null;
+  private webhookServer: WebhookServer | null = null;
   private sessionManagers: Map<string, ILinearSessionManager> = new Map();
   private issueAgentMap: Map<string, string> = new Map();
   private teamFilters: Map<string, TeamFilter[]> = new Map();
@@ -314,19 +530,77 @@ class LinearManager {
       this.teamFilters.set(agent.name, agent.chat.linear.teams);
     }
 
-    // 2. Create shared connector
-    const apiKey = process.env[this.config.agents[0].chat?.linear?.api_key_env ?? ""];
+    // 2. Build issueAgentMap from Linear API
+    await this.buildIssueAgentMap();
+
+    // 3. Create shared connector
+    const apiKey = process.env.LINEAR_API_KEY;
+    const webhookSecret = process.env.LINEAR_WEBHOOK_SECRET;
     if (!apiKey) throw new Error("LINEAR_API_KEY not found");
+    if (!webhookSecret) throw new Error("LINEAR_WEBHOOK_SECRET not found");
 
     this.connector = new LinearConnector({
       apiKey,
-      pollInterval: 30000,  // 30s default
+      webhookSecret,
       issueAgentMap: this.issueAgentMap,
       sessionManagers: this.sessionManagers,
-      logger: this.logger
+      logger: this.logger,
+      pollEnabled: false,  // Webhooks primary, polling disabled
+      pollInterval: 60000  // 60s fallback
     });
 
     await this.connector.connect();
+
+    // 4. Start general webhook server
+    const webhookPort = parseInt(process.env.WEBHOOK_PORT ?? "3000");
+    this.webhookServer = new WebhookServer({
+      port: webhookPort,
+      routes: [
+        {
+          path: "/webhooks/linear",
+          verifySignature: (body, sig) => this.connector!.verifyWebhookSignature(body, sig),
+          onEvent: async (event) => await this.connector!.handleWebhook(event)
+        }
+        // Future: add GitHub webhook route here
+        // {
+        //   path: "/webhooks/github",
+        //   verifySignature: (body, sig) => verifyGitHubSignature(body, sig),
+        //   onEvent: async (event) => await githubConnector.handleWebhook(event)
+        // }
+      ],
+      logger: this.logger
+    });
+
+    await this.webhookServer.start();
+  }
+
+  private async buildIssueAgentMap(): Promise<void> {
+    // Query Linear for issues matching each agent's filters
+    for (const [agentName, filters] of this.teamFilters) {
+      for (const teamFilter of filters) {
+        const issues = await this.queryIssues(teamFilter);
+
+        for (const issue of issues) {
+          // First match wins - one issue assigned to one agent
+          if (!this.issueAgentMap.has(issue.id)) {
+            this.issueAgentMap.set(issue.id, agentName);
+            this.logger.info(`Mapped issue ${issue.identifier} → ${agentName}`);
+          } else {
+            this.logger.warn(
+              `Issue ${issue.identifier} matches multiple agents, using ${this.issueAgentMap.get(issue.id)}`
+            );
+          }
+        }
+      }
+    }
+
+    // Rebuild periodically (every 5 minutes) to catch new issues
+    setInterval(() => this.buildIssueAgentMap(), 5 * 60 * 1000);
+  }
+
+  private async queryIssues(filter: TeamFilter): Promise<Issue[]> {
+    // Use Linear API to query issues (same Linear client as connector)
+    // Omitted for brevity
   }
 
   async start(): Promise<void> {
@@ -355,37 +629,30 @@ class LinearManager {
     const sessionResult = await sessionManager.getOrCreateSession(event.issueId);
     const existingSessionId = sessionResult.isNew ? null : sessionResult.sessionId;
 
-    // 2. Build conversation context
-    const context = await this.buildConversationContext(event.issueId, agentName);
+    // 2. Build conversation context (all comments, no limit)
+    const context = await this.buildConversationContext(event.issueId);
 
-    // 3. Create streaming responder
-    const responder = new LinearStreamingResponder({
-      issueId: event.issueId,
-      linearClient: this.connector.getClient(),
-      logger: this.logger
-    });
-
-    // 4. Trigger agent
+    // 3. Trigger agent (NO LinearStreamingResponder - agent uses Linear MCP directly)
     const result = await this.fleetManager.trigger(agentName, undefined, {
       prompt: event.comment.body,
       resume: existingSessionId,
+      // Agent handles responses via Linear MCP server in container
       onMessage: async (message) => {
-        await responder.handleMessage(message);
+        // Just log, agent creates comments via MCP
+        this.logger.debug(`Agent ${agentName} processing message type: ${message.type}`);
       }
     });
 
-    // 5. Store session ID
+    // 4. Store session ID
     if (result.sessionId && result.success) {
       await sessionManager.setSession(event.issueId, result.sessionId);
     }
   }
 
-  private async buildConversationContext(
-    issueId: string,
-    agentName: string
-  ): Promise<ConversationMessage[]> {
-    const issue = await this.connector.getClient().issue(issueId);
-    const comments = await issue.comments({ first: 10, orderBy: "createdAt" });
+  private async buildConversationContext(issueId: string): Promise<ConversationMessage[]> {
+    // Fetch issue + ALL comments (no limit - context window handles truncation)
+    const issue = await this.connector!.getClient().issue(issueId);
+    const comments = await issue.comments({ orderBy: "createdAt" });  // No 'first' limit
 
     const context: ConversationMessage[] = [
       {
@@ -396,7 +663,7 @@ class LinearManager {
 
     for (const comment of comments.nodes) {
       context.push({
-        role: comment.user.id === this.connector.getBotUserId() ? "assistant" : "user",
+        role: comment.user.id === this.connector!.getBotUserId() ? "assistant" : "user",
         content: comment.body
       });
     }
@@ -405,6 +672,7 @@ class LinearManager {
   }
 
   async stop(): Promise<void> {
+    await this.webhookServer?.stop();
     await this.connector?.disconnect();
   }
 }
@@ -518,53 +786,7 @@ class LinearSessionManager implements ILinearSessionManager {
 }
 ```
 
-#### 1.4 LinearStreamingResponder Class
-
-**Location**: `packages/linear/src/streaming-responder.ts`
-
-```typescript
-class LinearStreamingResponder {
-  private currentComment: string = "";
-  private lastCommentId: string | null = null;
-
-  constructor(
-    private config: {
-      issueId: string;
-      linearClient: LinearClient;
-      logger: Logger;
-    }
-  ) {}
-
-  async handleMessage(message: AssistantMessage): Promise<void> {
-    if (message.type !== "assistant") return;
-
-    // Extract text content from message
-    const textBlocks = message.content.filter(block => block.type === "text");
-    if (textBlocks.length === 0) return;
-
-    const newText = textBlocks.map(b => b.text).join("\n\n");
-
-    // Check if content changed significantly (avoid spam)
-    if (newText === this.currentComment) return;
-
-    this.currentComment = newText;
-
-    // Create or update comment
-    if (!this.lastCommentId) {
-      const result = await this.config.linearClient.createComment({
-        issueId: this.config.issueId,
-        body: newText
-      });
-      this.lastCommentId = result.comment.id;
-    } else {
-      await this.config.linearClient.updateComment({
-        id: this.lastCommentId,
-        body: newText
-      });
-    }
-  }
-}
-```
+**Note**: No `LinearStreamingResponder` needed - agents create Linear comments directly via Linear MCP server running in their container.
 
 ---
 
@@ -720,27 +942,23 @@ function validateSession(session: LinearSession, currentIssueId: string): boolea
 
 #### 2.4 Context Window Handoff
 
-When combined with WEA-22 (context handoff):
+When combined with WEA-22 (context handoff), agent uses Linear MCP to post handoff comments:
 
 ```typescript
-// In LinearStreamingResponder
-async handleContextThreshold(event: ContextThresholdEvent): Promise<void> {
-  // 1. Post summary comment
-  await this.config.linearClient.createComment({
-    issueId: this.config.issueId,
-    body: `⚠️ **Context window approaching limit** (${event.percentage}%)\n\nStarting new session to continue...`
-  });
+// Agent uses linear_create_comment MCP tool
+await mcp.linear_create_comment({
+  issueId: issueId,
+  body: `⚠️ **Context window approaching limit** (90%)\n\nStarting new session to continue...`
+});
 
-  // 2. Clear session (will create new one on next comment)
-  await this.sessionManager.clearSession(this.config.issueId);
+// SessionManager clears session (new one created on next comment)
+await sessionManager.clearSession(issueId);
 
-  // 3. Create handoff comment with session summary
-  const summary = await generateSessionSummary(event.sessionId);
-  await this.config.linearClient.createComment({
-    issueId: this.config.issueId,
-    body: `## Session Summary\n\n${summary}\n\n---\n*Continued in new session*`
-  });
-}
+// Agent posts session summary via MCP
+await mcp.linear_create_comment({
+  issueId: issueId,
+  body: `## Session Summary\n\n${summary}\n\n---\n*Continued in new session*`
+});
 ```
 
 ---
@@ -754,13 +972,22 @@ async handleContextThreshold(event: ContextThresholdEvent): Promise<void> {
 │  └─ Comment by @user: "Can you fix the login bug?"                 │
 └─────────────────────────────────────────────────────────────────────┘
                               │
-                              │ Poll (30s) or Webhook
+                              │ Webhook (primary) or Poll (fallback)
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      WebhookServer (General)                        │
+│  1. Receive POST /webhooks/linear                                  │
+│  2. Verify Linear signature (HMAC-SHA256)                          │
+│  3. Route to LinearConnector.handleWebhook()                       │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      LinearConnector                                │
-│  1. Fetch comments since lastCommentAt                             │
+│  1. Parse webhook event (Comment.create)                           │
 │  2. Filter out self-created (botUserId check)                      │
-│  3. Emit "message" event                                           │
+│  3. Debounce comment updates (5s delay + emoji)                    │
+│  4. Emit "message" event                                           │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               │ Event: message
@@ -768,7 +995,7 @@ async handleContextThreshold(event: ContextThresholdEvent): Promise<void> {
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      LinearManager                                  │
 │  1. Get/create session for issue ENG-123                           │
-│  2. Build conversation context (issue + comments)                  │
+│  2. Build conversation context (issue + ALL comments)              │
 │  3. Call fleetManager.trigger(agentName, ...)                      │
 └─────────────────────────────────────────────────────────────────────┘
                               │
@@ -777,23 +1004,26 @@ async handleContextThreshold(event: ContextThresholdEvent): Promise<void> {
 ┌─────────────────────────────────────────────────────────────────────┐
 │                       JobExecutor                                   │
 │  1. Create/resume Claude SDK session                               │
-│  2. Send message to agent                                          │
-│  3. Stream responses via onMessage callback                        │
+│  2. Send message to agent in Docker container                      │
+│  3. Agent has Linear MCP server available                          │
 └─────────────────────────────────────────────────────────────────────┘
                               │
-                              │ onMessage (streaming)
+                              │ Agent processes via SDK
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                  LinearStreamingResponder                           │
-│  1. Extract text from assistant message                            │
-│  2. Create/update Linear comment with response                     │
+│                  Agent Container (Claude SDK)                       │
+│  1. Analyze issue + comments                                       │
+│  2. Use Linear MCP tools:                                          │
+│     - linear_create_comment (post responses)                       │
+│     - linear_edit_issue (update state/assignee)                    │
+│     - linear_create_issues (create sub-tasks)                      │
 └─────────────────────────────────────────────────────────────────────┘
                               │
-                              │ createComment / updateComment
+                              │ Linear MCP → Linear API
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         Linear Platform                             │
-│  Issue: ENG-123                                                     │
+│  Issue: ENG-123 (State: In Progress)                               │
 │  └─ Comment by @agent: "I've identified the issue in auth.ts..."   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -1100,181 +1330,33 @@ This reduces API calls from `O(issues)` to `O(1)` per poll cycle.
 
 ---
 
-## Migration Path
+## Implementation Plan
 
-### Phase 1: MVP (Polling-based)
-- ✅ LinearConnector with polling
-- ✅ LinearManager integration
-- ✅ LinearSessionManager
-- ✅ Basic filtering (team, state, labels)
-- ✅ Comment-based conversations
+### Phase 1: Webhook-based MVP
+- ✅ General WebhookServer infrastructure (reusable for GitHub, etc.)
+- ✅ LinearConnector with webhook handling
+- ✅ LinearManager integration with FleetManager
+- ✅ LinearSessionManager (session per issue)
+- ✅ Comment debouncing (5s delay for updates)
+- ✅ Self-comment filtering (botUserId check)
+- ✅ Basic filtering (team, state, labels, assignee)
+- ✅ Issue→agent routing (first match wins)
+- ✅ Linear MCP server in agent containers
+- ✅ Agent can update issue state via MCP
 
-### Phase 2: Webhooks
-- Add LinearWebhookServer
-- Signature verification
-- Real-time event delivery
-- Fallback to polling if webhook fails
+### Phase 2: Advanced Features
+- Worktree integration (one branch per issue) - integrates with WEA-21
+- Context handoff (session continuity) - integrates with WEA-22
+- Cross-connector agent support (same agent on Slack + Linear)
+- Polling fallback (if webhooks fail)
+- Sub-task creation automation
+- PR auto-linking when branches are pushed
 
-### Phase 3: Advanced Features
-- Worktree integration (one branch per issue)
-- Context handoff (session continuity)
-- Issue state transitions (auto-mark as "In Progress")
-- Sub-task creation
-- PR auto-linking
-
-### Phase 4: Optimizations
-- Batched polling queries
-- Session file caching
-- Rate limit optimization
-- Webhook retry logic
-
----
-
-## Success Metrics
-
-### Functional Requirements
-- ✅ Agent responds to Linear comments within poll interval (30s)
-- ✅ Session continuity across multiple comments
-- ✅ No duplicate responses (self-created comment filtering works)
-- ✅ Correct issue→agent routing
-- ✅ Context includes issue description + recent comments
-
-### Performance Requirements
-- Poll latency: < 30s for new comments
-- API rate limit: < 900 requests/hour (Linear limit: 1000)
-- Session file I/O: < 100ms per update
-- Memory usage: < 50MB for 100 active sessions
-
-### Reliability Requirements
-- Connector uptime: > 99% (auto-reconnect on failures)
-- Session persistence: 100% (atomic writes, no data loss)
-- Error recovery: Graceful degradation on Linear API failures
-
----
-
-## Open Questions
-
-1. **Multiple agents matching same issue**: How to resolve conflicts?
-   - **Proposed**: First match wins, log warning
-   - **Alternative**: Support multiple agents per issue (broadcast comments)
-
-2. **Comment update handling**: Should agent respond to edited comments?
-   - **Proposed**: No (only respond to new comments)
-   - **Alternative**: Track comment updates, trigger re-response
-
-3. **Issue state transitions**: Should agent auto-update issue state?
-   - **Proposed**: No (agent can suggest, but user confirms)
-   - **Alternative**: Agent has permission to update state based on completion
-
-4. **Large context issues**: Issue with 100+ comments, how to handle?
-   - **Proposed**: Include only last N comments (configurable, default: 10)
-   - **Alternative**: Summarize old comments using separate API call
-
-5. **Webhook vs Polling**: Which to prioritize?
-   - **Proposed**: Polling for MVP (simpler, no infrastructure)
-   - **Alternative**: Webhooks first (lower latency, better UX)
-
----
-
-## Implementation Checklist
-
-### Core Files to Create
-
-- [ ] `packages/linear/src/linear-connector.ts` - Main connector class
-- [ ] `packages/linear/src/session-manager.ts` - Session persistence
-- [ ] `packages/linear/src/streaming-responder.ts` - Comment streaming
-- [ ] `packages/linear/src/types.ts` - TypeScript interfaces
-- [ ] `packages/linear/src/index.ts` - Package exports
-- [ ] `packages/core/src/fleet-manager/linear-manager.ts` - FleetManager integration
-- [ ] `packages/core/src/config/schemas/linear.schema.ts` - Config validation
-
-### Tests to Write
-
-- [ ] `packages/linear/__tests__/linear-connector.test.ts`
-- [ ] `packages/linear/__tests__/session-manager.test.ts`
-- [ ] `packages/linear/__tests__/streaming-responder.test.ts`
-- [ ] `packages/core/__tests__/fleet-manager/linear-manager.test.ts`
-
-### Documentation to Update
-
-- [ ] `docs/src/content/docs/connectors/linear.md` - User guide
-- [ ] `docs/src/content/docs/configuration/agents.md` - Config reference
-- [ ] `README.md` - Add Linear to feature list
-- [ ] `CHANGELOG.md` - Add Linear connector release notes
-
-### Examples to Create
-
-- [ ] `examples/linear-agent/agents/backend-agent.yaml`
-- [ ] `examples/linear-agent/herdctl.yaml`
-- [ ] `examples/linear-agent/README.md`
-
----
-
-## References
-
-- [Linear API Documentation](https://developers.linear.app/docs)
-- [Linear Webhooks](https://developers.linear.app/docs/graphql/webhooks)
-- [WEA-21: Worktree Strategy](../wea-21-worktree-strategy/prd.md)
-- [WEA-22: Context Handoff](../wea-22-context-handoff/prd.md)
-- [Slack Connector Implementation](../../packages/slack/src/slack-connector.ts)
-- [Discord Connector Implementation](../../packages/discord/src/discord-connector.ts)
-
----
-
-## Appendix: Linear API Examples
-
-### Fetch Issue Comments
-
-```typescript
-const issue = await client.issue("issue-uuid");
-const comments = await issue.comments({
-  filter: {
-    createdAt: { gt: "2026-02-17T12:00:00Z" }
-  },
-  orderBy: "createdAt",
-  first: 10
-});
-
-for (const comment of comments.nodes) {
-  console.log(`${comment.user.name}: ${comment.body}`);
-}
-```
-
-### Create Comment
-
-```typescript
-const result = await client.createComment({
-  issueId: "issue-uuid",
-  body: "I've identified the issue in `auth.ts` line 45..."
-});
-
-console.log(`Created comment: ${result.comment.id}`);
-```
-
-### Query Issues by Filters
-
-```typescript
-const issues = await client.issues({
-  filter: {
-    team: { id: { eq: "team-uuid" } },
-    state: { name: { in: ["Todo", "In Progress"] } },
-    labels: { name: { in: ["backend"] } },
-    assignee: { id: { eq: "user-uuid" } }
-  }
-});
-
-for (const issue of issues.nodes) {
-  console.log(`${issue.identifier}: ${issue.title}`);
-}
-```
-
-### Get Viewer (Bot User)
-
-```typescript
-const viewer = await client.viewer;
-console.log(`Bot user ID: ${viewer.id}`);
-console.log(`Bot user name: ${viewer.name}`);
-```
+### Phase 3: Cross-Connector Session Sharing (Future)
+- Unified session across Slack + Linear + GitHub
+- Session handoff commands (`!continue-on-linear`)
+- Shared context across platforms
+- Out of scope for MVP
 
 ---
 
