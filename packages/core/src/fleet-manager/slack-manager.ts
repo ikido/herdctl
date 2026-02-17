@@ -625,12 +625,53 @@ export class SlackManager {
         ) => Promise<import("./types.js").TriggerResult>;
       };
 
+      // Set agent config snapshot on first message (new session)
+      if (sessionManager && !existingSessionId) {
+        try {
+          await sessionManager.setAgentConfig(event.metadata.channelId, {
+            model: agent.model ?? "claude-sonnet-4",
+            permissionMode: agent.permission_mode ?? "default",
+            mcpServers: agent.mcp_servers ? Object.keys(agent.mcp_servers) : [],
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.warn(`Failed to set agent config: ${errorMessage}`);
+        }
+      }
+
       const result = await fleetManager.trigger(agentName, undefined, {
         prompt: event.prompt,
         resume: existingSessionId,
         injectedMcpServers,
         onMessage: async (message) => {
-          if (message.type === "assistant") {
+          // Track context usage from assistant messages
+          if (message.type === "assistant" && sessionManager) {
+            // Extract usage data from SDK message
+            const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number; contextWindow?: number } }).usage;
+            const contextWindow = (message as { contextWindow?: number }).contextWindow;
+
+            if (usage && (usage.input_tokens || usage.output_tokens)) {
+              try {
+                await sessionManager.updateContextUsage(event.metadata.channelId, {
+                  inputTokens: usage.input_tokens ?? 0,
+                  outputTokens: usage.output_tokens ?? 0,
+                  contextWindow: contextWindow ?? usage.contextWindow ?? 200000, // Default to 200k
+                });
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                logger.warn(`Failed to update context usage: ${errorMessage}`);
+              }
+            }
+
+            // Increment message count
+            try {
+              await sessionManager.incrementMessageCount(event.metadata.channelId);
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              logger.warn(`Failed to increment message count: ${errorMessage}`);
+            }
+
+            // Send content to Slack
             const content = this.extractMessageContent(message);
             if (content) {
               await streamer.addMessageAndSend(content);

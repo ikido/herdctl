@@ -19,9 +19,12 @@ import {
   type ISessionManager,
   type SessionResult,
   type ChannelSession,
+  type ChannelSessionV3,
   type SlackSessionState,
+  type SlackSessionStateV3,
   SlackSessionStateSchema,
   createInitialSessionState,
+  migrateSessionStateV2ToV3,
 } from "./types.js";
 import {
   SessionStateReadError,
@@ -106,14 +109,16 @@ export class SessionManager implements ISessionManager {
       };
     }
 
-    // Create new session
+    // Create new session (v3 format)
     const sessionId = this.generateSessionId();
     const state = await this.loadState();
     const now = new Date().toISOString();
 
     state.channels[channelId] = {
       sessionId,
+      sessionStartedAt: now,
       lastMessageAt: now,
+      messageCount: 0,
     };
 
     await this.saveState(state);
@@ -182,10 +187,21 @@ export class SessionManager implements ISessionManager {
     const now = new Date().toISOString();
     const existingSession = state.channels[channelId];
 
-    state.channels[channelId] = {
-      sessionId,
-      lastMessageAt: now,
-    };
+    if (existingSession) {
+      // Preserve v3 fields if they exist
+      const sessionV3 = this.ensureSessionV3(existingSession);
+      sessionV3.sessionId = sessionId;
+      sessionV3.lastMessageAt = now;
+      state.channels[channelId] = sessionV3;
+    } else {
+      // Create new v3 session
+      state.channels[channelId] = {
+        sessionId,
+        sessionStartedAt: now,
+        lastMessageAt: now,
+        messageCount: 0,
+      };
+    }
 
     await this.saveState(state);
 
@@ -264,6 +280,110 @@ export class SessionManager implements ISessionManager {
     return activeCount;
   }
 
+  /**
+   * Update context usage for a session (v3+)
+   */
+  async updateContextUsage(
+    channelId: string,
+    usage: {
+      inputTokens: number;
+      outputTokens: number;
+      contextWindow: number;
+    }
+  ): Promise<void> {
+    const state = await this.loadState();
+    const session = state.channels[channelId];
+
+    if (!session) {
+      this.logger.warn("Attempted to update context usage for non-existent session", {
+        channelId,
+      });
+      return;
+    }
+
+    // Ensure session is v3 format
+    const sessionV3 = this.ensureSessionV3(session);
+
+    sessionV3.contextUsage = {
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.inputTokens + usage.outputTokens,
+      contextWindow: usage.contextWindow,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    state.channels[channelId] = sessionV3;
+    await this.saveState(state);
+
+    this.logger.debug("Updated context usage", {
+      channelId,
+      totalTokens: sessionV3.contextUsage.totalTokens,
+      contextWindow: sessionV3.contextUsage.contextWindow,
+    });
+  }
+
+  /**
+   * Increment message count for a session (v3+)
+   */
+  async incrementMessageCount(channelId: string): Promise<void> {
+    const state = await this.loadState();
+    const session = state.channels[channelId];
+
+    if (!session) {
+      this.logger.warn("Attempted to increment message count for non-existent session", {
+        channelId,
+      });
+      return;
+    }
+
+    // Ensure session is v3 format
+    const sessionV3 = this.ensureSessionV3(session);
+    sessionV3.messageCount = (sessionV3.messageCount ?? 0) + 1;
+
+    state.channels[channelId] = sessionV3;
+    await this.saveState(state);
+
+    this.logger.debug("Incremented message count", {
+      channelId,
+      messageCount: sessionV3.messageCount,
+    });
+  }
+
+  /**
+   * Set agent configuration snapshot for a session (v3+)
+   */
+  async setAgentConfig(
+    channelId: string,
+    config: {
+      model: string;
+      permissionMode: string;
+      mcpServers: string[];
+    }
+  ): Promise<void> {
+    const state = await this.loadState();
+    const session = state.channels[channelId];
+
+    if (!session) {
+      this.logger.warn("Attempted to set agent config for non-existent session", {
+        channelId,
+      });
+      return;
+    }
+
+    // Ensure session is v3 format
+    const sessionV3 = this.ensureSessionV3(session);
+    sessionV3.agentConfig = config;
+
+    state.channels[channelId] = sessionV3;
+    await this.saveState(state);
+
+    this.logger.debug("Set agent config", {
+      channelId,
+      model: config.model,
+      permissionMode: config.permissionMode,
+    });
+  }
+
   // ===========================================================================
   // Private Helpers
   // ===========================================================================
@@ -277,6 +397,24 @@ export class SessionManager implements ISessionManager {
     const now = new Date();
     const expiryMs = this.sessionExpiryHours * 60 * 60 * 1000;
     return now.getTime() - lastMessageAt.getTime() > expiryMs;
+  }
+
+  /**
+   * Ensure a session is in v3 format, migrating from v2 if necessary
+   */
+  private ensureSessionV3(session: ChannelSession): ChannelSessionV3 {
+    // Check if already v3 (has sessionStartedAt)
+    if ("sessionStartedAt" in session) {
+      return session as ChannelSessionV3;
+    }
+
+    // Migrate v2 to v3
+    return {
+      sessionId: session.sessionId,
+      sessionStartedAt: session.lastMessageAt, // Best guess
+      lastMessageAt: session.lastMessageAt,
+      messageCount: 0,
+    };
   }
 
   private async loadState(): Promise<SlackSessionState> {
@@ -325,7 +463,16 @@ export class SessionManager implements ISessionManager {
       return this.state;
     }
 
-    this.state = validated.data;
+    // Handle v2→v3 migration
+    if (validated.data.version === 2) {
+      this.logger.info("Migrating session state from v2 to v3");
+      this.state = migrateSessionStateV2ToV3(validated.data);
+      // Save migrated state
+      await this.saveState(this.state);
+    } else {
+      this.state = validated.data as SlackSessionStateV3;
+    }
+
     return this.state;
   }
 
