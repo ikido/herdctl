@@ -306,10 +306,15 @@ export class SessionManager implements ISessionManager {
     // Ensure session is v3 format
     const sessionV3 = this.ensureSessionV3(session);
 
+    // Get existing values or start from 0
+    const existingInput = sessionV3.contextUsage?.inputTokens ?? 0;
+    const existingOutput = sessionV3.contextUsage?.outputTokens ?? 0;
+
+    // ACCUMULATE tokens across all messages (don't replace)
     sessionV3.contextUsage = {
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      totalTokens: usage.inputTokens + usage.outputTokens,
+      inputTokens: existingInput + usage.inputTokens,
+      outputTokens: existingOutput + usage.outputTokens,
+      totalTokens: (existingInput + usage.inputTokens) + (existingOutput + usage.outputTokens),
       contextWindow: usage.contextWindow,
       lastUpdated: new Date().toISOString(),
     };

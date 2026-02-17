@@ -572,7 +572,7 @@ export class SlackManager {
         // Get or create session BEFORE triggering agent
         // This ensures the session exists in SessionManager when onMessage callbacks fire
         const sessionResult = await sessionManager.getOrCreateSession(event.metadata.channelId);
-        existingSessionId = sessionResult.isNew ? undefined : sessionResult.sessionId;
+        existingSessionId = sessionResult.isNew ? null : sessionResult.sessionId;
 
         if (existingSessionId) {
           logger.debug(`Resuming session for channel ${event.metadata.channelId}: ${existingSessionId}`);
@@ -643,8 +643,8 @@ export class SlackManager {
         ) => Promise<import("./types.js").TriggerResult>;
       };
 
-      // Set agent config snapshot on first message (new session)
-      if (sessionManager && !existingSessionId) {
+      // Set agent config snapshot on every request (captures config changes)
+      if (sessionManager) {
         try {
           await sessionManager.setAgentConfig(event.metadata.channelId, {
             model: agent.model ?? "claude-sonnet-4",

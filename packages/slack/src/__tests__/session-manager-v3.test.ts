@@ -59,7 +59,7 @@ describe("SessionManager v3 Features", () => {
       expect(session.contextUsage!.lastUpdated).toBeDefined();
     });
 
-    it("updates existing context usage", async () => {
+    it("accumulates context usage across updates", async () => {
       const manager = createManager();
       await manager.getOrCreateSession("C0123456789");
 
@@ -70,7 +70,7 @@ describe("SessionManager v3 Features", () => {
         contextWindow: 200000,
       });
 
-      // Second update
+      // Second update - should ACCUMULATE, not replace
       await manager.updateContextUsage("C0123456789", {
         inputTokens: 2000,
         outputTokens: 800,
@@ -80,9 +80,9 @@ describe("SessionManager v3 Features", () => {
       const session = (await manager.getSession(
         "C0123456789"
       )) as ChannelSessionV3;
-      expect(session.contextUsage!.inputTokens).toBe(2000);
-      expect(session.contextUsage!.outputTokens).toBe(800);
-      expect(session.contextUsage!.totalTokens).toBe(2800);
+      expect(session.contextUsage!.inputTokens).toBe(3000); // 1000 + 2000
+      expect(session.contextUsage!.outputTokens).toBe(1300); // 500 + 800
+      expect(session.contextUsage!.totalTokens).toBe(4300); // 3000 + 1300
     });
 
     it("handles zero tokens correctly", async () => {
@@ -120,6 +120,27 @@ describe("SessionManager v3 Features", () => {
       expect(parsed.channels.C0123456789.contextUsage.inputTokens).toBe(5000);
       expect(parsed.channels.C0123456789.contextUsage.outputTokens).toBe(2500);
       expect(parsed.channels.C0123456789.contextUsage.totalTokens).toBe(7500);
+    });
+
+    it("accumulates tokens across many updates", async () => {
+      const manager = createManager();
+      await manager.getOrCreateSession("C0123456789");
+
+      // Simulate a conversation with 10 messages
+      for (let i = 0; i < 10; i++) {
+        await manager.updateContextUsage("C0123456789", {
+          inputTokens: 500,
+          outputTokens: 300,
+          contextWindow: 200000,
+        });
+      }
+
+      const session = (await manager.getSession(
+        "C0123456789"
+      )) as ChannelSessionV3;
+      expect(session.contextUsage!.inputTokens).toBe(5000); // 500 * 10
+      expect(session.contextUsage!.outputTokens).toBe(3000); // 300 * 10
+      expect(session.contextUsage!.totalTokens).toBe(8000); // 5000 + 3000
     });
 
     it("does nothing for non-existent channel", async () => {
@@ -384,9 +405,12 @@ describe("SessionManager v3 Features", () => {
       const session = (await manager.getSession(channelId)) as ChannelSessionV3;
 
       expect(session.messageCount).toBe(5);
-      expect(session.contextUsage!.inputTokens).toBe(5000);
-      expect(session.contextUsage!.outputTokens).toBe(2500);
-      expect(session.contextUsage!.totalTokens).toBe(7500);
+      // Tokens ACCUMULATE: 1000+2000+3000+4000+5000 = 15000
+      expect(session.contextUsage!.inputTokens).toBe(15000);
+      // Tokens ACCUMULATE: 500+1000+1500+2000+2500 = 7500
+      expect(session.contextUsage!.outputTokens).toBe(7500);
+      // Total: 15000 + 7500 = 22500
+      expect(session.contextUsage!.totalTokens).toBe(22500);
       expect(session.agentConfig!.model).toBe("claude-sonnet-4");
       expect(session.agentConfig!.mcpServers).toHaveLength(2);
     });
